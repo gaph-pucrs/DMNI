@@ -36,7 +36,7 @@ package DMNIPkg;
         MONITOR_QOS,
         MONITOR_PWR,
         BRLITE_MON_NSVC
-    } hermes_op_t;
+    } monitor_type_t;
 
     typedef struct packed {
 		logic [31:0] 	                        payload;
