@@ -36,7 +36,9 @@ module DMA
     input  logic [31:0]                     hermes_address_i,
     input  logic [31:0]                     hermes_address_2_i,
     output logic                            hermes_send_active_o,
-    output logic                            hermes_receive_active_o
+    output logic                            hermes_receive_active_o,
+    output logic                            hermes_receive_available_o,
+    output logic [(HERMES_FLIT_SIZE - 1):0] hermes_receive_flits_available_o
 )
 
     typedef enum logic {
@@ -146,6 +148,8 @@ module DMA
         : (hermes_receive_state != HERMES_RECEIVE_WAIT);
 
     assign hermes_receive_active_o = (hermes_receive_state == HERMES_RECEIVE_DATA);
+    assign hermes_receive_available_o = (hermes_receive_state == HERMES_RECEIVE_WAIT);
+    assign hermes_receive_flits_available_o = hermes_payload_cntr;
 
 ////////////////////////////////////////////////////////////////////////////////
 // NoC Send FSM
