@@ -6,39 +6,45 @@ module DMA
     parameter TASK_PER_PE      = 4
 )
 (
-    input  logic                            clk_i,
-    input  logic                            rst_ni,
+    input  logic                                               clk_i,
+    input  logic                                               rst_ni,
 
     /* Hermes input interface (RECEIVE) */
-    input  logic                            noc_rx_i,
-    output logic                            noc_credit_o,
-    input  logic [(HERMES_FLIT_SIZE - 1):0] noc_data_i,
+    input  logic                                               noc_rx_i,
+    output logic                                               noc_credit_o,
+    input  logic [(HERMES_FLIT_SIZE - 1):0]                    noc_data_i,
 
     /* Hermes output interface (SEND) */
-    output logic                            noc_tx_o,
-    input  logic                            noc_ack_i,
-    output logic [(HERMES_FLIT_SIZE - 1):0] noc_data_o,
+    output logic                                               noc_tx_o,
+    input  logic                                               noc_ack_i,
+    output logic [(HERMES_FLIT_SIZE - 1):0]                    noc_data_o,
 
     /* BrLite Monitor receive interface */
-    input  logic                            brlite_req_i,
-    output logic                            brlite_ack_o,
-    input  brlite_mon_t                     brlite_data_i,
+    input  logic                                               brlite_req_i,
+    output logic                                               brlite_ack_o,
+    input  brlite_mon_t                                        brlite_data_i,
 
     /* Memory interface */
-    output logic [ 3:0]                     mem_we_o,
-    output logic [31:0]                     mem_addr_o,
-    input  logic [31:0]                     mem_data_i,
-    output logic [31:0]                     mem_data_o,
+    output logic [ 3:0]                                        mem_we_o,
+    output logic [31:0]                                        mem_addr_o,
+    input  logic [31:0]                                        mem_data_i,
+    output logic [31:0]                                        mem_data_o,
 
     /* Configuration interface */
-    input  logic                            hermes_start_i,
-    input  logic                            hermes_operation_i,
-    input  logic [31:0]                     hermes_address_i,
-    input  logic [31:0]                     hermes_address_2_i,
-    output logic                            hermes_send_active_o,
-    output logic                            hermes_receive_active_o,
-    output logic                            hermes_receive_available_o,
-    output logic [(HERMES_FLIT_SIZE - 1):0] hermes_receive_flits_available_o
+    input  logic                                               hermes_start_i,
+    input  logic                                               brlite_clear_i,
+    input  hermes_op_t                                         hermes_operation_i,
+    input  logic       [31:0]                                  hermes_size_i,
+    input  logic       [31:0]                                  hermes_size_2_i,
+    input  logic       [31:0]                                  hermes_address_i,
+    input  logic       [31:0]                                  hermes_address_2_i,
+    input  logic       [($clog2(BRLITE_MON_NSVC) - 1):0]       brlite_class_clear_i,
+    input  logic       [31:0][($clog2(BRLITE_MON_NSVC) - 1):0] brlite_mon_ptrs_i,
+    output logic                                               hermes_send_active_o,
+    output logic                                               hermes_receive_active_o,
+    output logic                                               hermes_receive_available_o,
+    output logic                                               brlite_clear_ack_o,
+    output logic       [(HERMES_FLIT_SIZE - 1):0]              hermes_receive_flits_available_o
 )
 
     typedef enum logic {
@@ -339,18 +345,6 @@ module DMA
         end
     end
 
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni) begin
-            for (int p = 0; x < N_PE; x++)
-                for (int t = 0; t < TASK_PER_PE; t++)
-                    mon_table[p][t] <= '1;
-        end
-        else begin
-            if (brlite_receive_state == BRLITE_POPULATE_TABLE)
-                mon_table[brlite_data_i.seq_source][free_idx] <= brlite_data_i.producer;
-        end
-    end
-
     assign brlite_ack_o = (brlite_receive_state == BRLITE_RECEIVE_ACK);
 
     logic [31:0] brlite_data;
@@ -371,6 +365,80 @@ module DMA
 
     logic [31:0] brlite_addr;
     assign brlite_addr = {brlite_addr_base[31:3], (brlite_receive_state == BRLITE_RECEIVE_WRITE_PAYLOAD), 2'b0};
+
+////////////////////////////////////////////////////////////////////////////////
+// Monitor table control
+////////////////////////////////////////////////////////////////////////////////
+
+    typedef enum logic [] {
+        MONITOR_IDLE,
+        MONITOR_SEARCH,
+        MONITOR_CLEAR,
+        MONITOR_IGNORE
+    } monitor_t;
+
+    monitor_t monitor_state;
+
+    logic clear_found;
+    assign clear_found = mon_table[brlite_class_clear_i[31:16]][clear_idx] == brlite_class_clear_i[15:0];
+
+    logic [$clog2(TASK_PER_PE):0] clear_idx; /* On purpose 1 bit more */
+
+    monitor_t monitor_next_state;
+    always_comb begin
+        case (monitor_state)
+            MONITOR_IDLE: 
+                monitor_next_state = brlite_clear_i 
+                    ? MONITOR_SEARCH 
+                    : MONITOR_IDLE;
+            MONITOR_SEARCH: begin
+                if (clear_idx == TASK_PER_PE)
+                    monitor_next_state = MONITOR_IGNORE;
+                else
+                    monitor_next_state = clear_found ? MONITOR_CLEAR : MONITOR_SEARCH;
+            end
+            MONITOR_CLEAR:
+                monitor_next_state = MONITOR_IDLE;
+            MONITOR_IGNORE:
+                monitor_next_state = MONITOR_IDLE;
+        endcase
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if !(rst_ni)
+            monitor_state <= MONITOR_IDLE;
+        else
+            monitor_state <= monitor_next_state;
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            clear_idx   <= '0;
+        end
+        else begin
+            if (monitor_state == MONITOR_IDLE)
+                clear_idx   <= '0;
+            else if (monitor_state == MONITOR_SEARCH && !clear_found)
+                clear_idx <= clear_idx + 1'b1;
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            for (int p = 0; x < N_PE; x++)
+                for (int t = 0; t < TASK_PER_PE; t++)
+                    mon_table[p][t] <= '1;
+        end
+        else begin
+            if (brlite_receive_state == BRLITE_POPULATE_TABLE)
+                mon_table[brlite_data_i.seq_source][free_idx] <= brlite_data_i.producer;
+
+            if (monitor_state == MONITOR_CLEAR)
+                mon_table[brlite_class_clear_i[31:16]][clear_idx] <= '1;
+        end
+    end
+
+    assign brlite_clear_ack_o = (monitor_state == MONITOR_CLEAR || monitor_state == MONITOR_IGNORE);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Arbiter
