@@ -251,12 +251,12 @@ module DMA
 // BrLite Monitor Receive FSM
 ////////////////////////////////////////////////////////////////////////////////
 
-    typedef enum logic [] {
-        BRLITE_RECEIVE_IDLE,
-        BRLITE_RECEIVE_SEARCH,
-        BRLITE_RECEIVE_POPULATE_TABLE,
-        BRLITE_RECEIVE_WRITE,
-        BRLITE_RECEIVE_ACK
+    typedef enum logic [4:0] {
+        BRLITE_RECEIVE_IDLE           = 5'b00001,
+        BRLITE_RECEIVE_SEARCH         = 5'b00010,
+        BRLITE_RECEIVE_POPULATE_TABLE = 5'b00100,
+        BRLITE_RECEIVE_WRITE          = 5'b01000,
+        BRLITE_RECEIVE_ACK            = 5'b10000
     } brlite_receive_t;
 
     brlite_receive_t brlite_receive_state;
@@ -370,11 +370,11 @@ module DMA
 // Monitor table control
 ////////////////////////////////////////////////////////////////////////////////
 
-    typedef enum logic [] {
-        MONITOR_IDLE,
-        MONITOR_SEARCH,
-        MONITOR_CLEAR,
-        MONITOR_IGNORE
+    typedef enum logic [3:0] {
+        MONITOR_IDLE   = 4'b0001,
+        MONITOR_SEARCH = 4'b0010,
+        MONITOR_CLEAR  = 4'b0100,
+        MONITOR_IGNORE = 4'b1000
     } monitor_t;
 
     monitor_t monitor_state;
