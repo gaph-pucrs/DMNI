@@ -38,16 +38,16 @@ module DMA
     input  logic       [31:0]                                  hermes_size_2_i,
     input  logic       [31:0]                                  hermes_address_i,
     input  logic       [31:0]                                  hermes_address_2_i,
-    input  logic       [($clog2(BRLITE_MON_NSVC) - 1):0]       brlite_class_clear_i,
+    input  logic       [31:0]                                  brlite_task_clear_i,
     input  logic       [31:0][($clog2(BRLITE_MON_NSVC) - 1):0] brlite_mon_ptrs_i,
     output logic                                               hermes_send_active_o,
     output logic                                               hermes_receive_active_o,
     output logic                                               hermes_receive_available_o,
     output logic                                               brlite_clear_ack_o,
     output logic       [(HERMES_FLIT_SIZE - 1):0]              hermes_receive_flits_available_o
-)
+);
 
-    typedef enum logic {
+    typedef enum {
         ARBIT_SEND,
         ARBIT_RECEIVE,
         ARBIT_BR_LITE
@@ -114,7 +114,7 @@ module DMA
             HERMES_RECEIVE_HEADER:
                 hermes_receive_next_state = noc_rx_i 
                     ? HERMES_RECEIVE_SIZE 
-                    : HERMES_RECEIVE_IDLE;
+                    : HERMES_RECEIVE_HEADER;
             HERMES_RECEIVE_SIZE:
                 hermes_receive_next_state = noc_rx_i 
                     ? HERMES_RECEIVE_WAIT 
@@ -128,9 +128,9 @@ module DMA
                     : HERMES_RECEIVE_WAIT;
             HERMES_RECEIVE_DATA: begin
                 if (can_receive) begin
-                    if (hermes_payload_cntr == HERMES_FLIT_SIZE'b1)
+                    if (hermes_payload_cntr == 1'b1)
                         hermes_receive_next_state = HERMES_RECEIVE_HEADER;
-                    else if (hermes_receive_size == HERMES_FLIT_SIZE'b1)
+                    else if (hermes_receive_size == 1'b1)
                         hermes_receive_next_state = HERMES_RECEIVE_WAIT;
                     else
                         hermes_receive_next_state = HERMES_RECEIVE_DATA;
@@ -220,15 +220,15 @@ module DMA
             HERMES_SEND_DATA: begin
                 if (can_send) begin
                     if (
-                        (hermes_send_size == HERMES_FLIT_SIZE'b1 && hermes_send_size_2 == '0)
-                        || (hermes_send_size == '0 && hermes_send_size_2 == HERMES_FLIT_SIZE'b1)
+                        (hermes_send_size == 1'b1 && hermes_send_size_2 == '0)
+                        || (hermes_send_size == '0 && hermes_send_size_2 == 1'b1)
                     )
                         hermes_send_next_state = HERMES_SEND_IDLE;
                     else
                         hermes_send_next_state = HERMES_SEND_DATA;
                 end
                 else begin
-                    hermes_send_next_state = HERMES_SEND_DATA
+                    hermes_send_next_state = HERMES_SEND_DATA;
                 end
             end
         endcase
@@ -251,22 +251,23 @@ module DMA
 // BrLite Monitor Receive FSM
 ////////////////////////////////////////////////////////////////////////////////
 
-    typedef enum logic [4:0] {
-        BRLITE_RECEIVE_IDLE           = 5'b00001,
-        BRLITE_RECEIVE_SEARCH         = 5'b00010,
-        BRLITE_RECEIVE_POPULATE_TABLE = 5'b00100,
-        BRLITE_RECEIVE_WRITE          = 5'b01000,
-        BRLITE_RECEIVE_ACK            = 5'b10000
+    typedef enum logic [5:0] {
+        BRLITE_RECEIVE_IDLE           = 6'b000001,
+        BRLITE_RECEIVE_SEARCH         = 6'b000010,
+        BRLITE_RECEIVE_POPULATE_TABLE = 6'b000100,
+        BRLITE_RECEIVE_WRITE_TASK     = 6'b001000,
+        BRLITE_RECEIVE_WRITE_PAYLOAD  = 6'b010000,
+        BRLITE_RECEIVE_ACK            = 6'b100000
     } brlite_receive_t;
 
     brlite_receive_t brlite_receive_state;
 
-    logic [15:0] mon_table [($clog2(N_PE) - 1):0][($clog(TASK_PER_PE) - 1):0];
+    logic [15:0] mon_table [($clog2(N_PE) - 1):0][($clog2(TASK_PER_PE) - 1):0];
 
     logic [$clog2(TASK_PER_PE):0] task_idx; /* On purpose 1 bit more */
 
     logic task_found;
-    assign task_found = mon_table[brlite_data_i.seq_source][task_idx] == brlite_data_i.producer;
+    assign task_found = (mon_table[brlite_data_i.seq_source][task_idx] == brlite_data_i.producer);
 
     logic has_free;
 
@@ -288,11 +289,11 @@ module DMA
                         : BRLITE_RECEIVE_ACK;
                 else
                     brlite_receive_next_state = task_found
-                        ? BRLITE_RECEIVE_WRITE
+                        ? BRLITE_RECEIVE_WRITE_TASK
                         : BRLITE_RECEIVE_SEARCH;
             end
             BRLITE_RECEIVE_POPULATE_TABLE:
-                brlite_receive_next_state = BRLITE_RECEIVE_WRITE;
+                brlite_receive_next_state = BRLITE_RECEIVE_WRITE_TASK;
             BRLITE_RECEIVE_WRITE_TASK:
                 brlite_receive_next_state = (current_arbit == ARBIT_SEND)
                     ? BRLITE_RECEIVE_WRITE_PAYLOAD
@@ -339,7 +340,7 @@ module DMA
                     end
                 end
             end
-            else if (brlite_receive_state == BRLITE_POPULATE_TABLE) begin
+            else if (brlite_receive_state == BRLITE_RECEIVE_POPULATE_TABLE) begin
                 task_idx <= free_idx;
             end
         end
@@ -379,10 +380,10 @@ module DMA
 
     monitor_t monitor_state;
 
-    logic clear_found;
-    assign clear_found = mon_table[brlite_class_clear_i[31:16]][clear_idx] == brlite_class_clear_i[15:0];
-
     logic [$clog2(TASK_PER_PE):0] clear_idx; /* On purpose 1 bit more */
+
+    logic clear_found;
+    assign clear_found = (mon_table[brlite_task_clear_i[31:16]][clear_idx] == brlite_task_clear_i[15:0]);
 
     monitor_t monitor_next_state;
     always_comb begin
@@ -405,7 +406,7 @@ module DMA
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
-        if !(rst_ni)
+        if (!rst_ni)
             monitor_state <= MONITOR_IDLE;
         else
             monitor_state <= monitor_next_state;
@@ -425,16 +426,16 @@ module DMA
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
-            for (int p = 0; x < N_PE; x++)
+            for (int p = 0; p < N_PE; p++)
                 for (int t = 0; t < TASK_PER_PE; t++)
                     mon_table[p][t] <= '1;
         end
         else begin
-            if (brlite_receive_state == BRLITE_POPULATE_TABLE)
+            if (brlite_receive_state == BRLITE_RECEIVE_POPULATE_TABLE)
                 mon_table[brlite_data_i.seq_source][free_idx] <= brlite_data_i.producer;
 
             if (monitor_state == MONITOR_CLEAR)
-                mon_table[brlite_class_clear_i[31:16]][clear_idx] <= '1;
+                mon_table[brlite_task_clear_i[31:16]][clear_idx] <= '1;
         end
     end
 
@@ -445,7 +446,7 @@ module DMA
 ////////////////////////////////////////////////////////////////////////////////
 
     localparam NSOURCES = 3;
-    typedef enum logic [($clog2(NSOURCES) - 1):0] {
+    typedef enum logic [(NSOURCES - 1):0] {
         ARBIT_PENDING_SEND    = 3'b001,
         ARBIT_PENDING_RECEIVE = 3'b010,
         ARBIT_PENDING_BR_LITE = 3'b100
@@ -468,7 +469,7 @@ module DMA
                 continue;
 
             if (arbit_pending[i]) begin
-                next_arbit = i;
+                next_arbit = arbit_t'(i);
                 break;
             end
         end
@@ -476,7 +477,7 @@ module DMA
         if (next_arbit == current_arbit) begin
             for (int i = 0; i < NSOURCES; i++) begin
                 if (arbit_pending[i]) begin
-                    next_arbit = i;
+                    next_arbit = arbit_t'(i);
                     break;
                 end
             end
@@ -523,7 +524,7 @@ module DMA
         if (current_arbit == ARBIT_SEND || arbit_pending == '0)
             mem_we_o = '0;
         else
-            mem_we_o = {4'{arbit_pending[current_arbit]}};
+            mem_we_o = {4{arbit_pending[current_arbit]}};
     end
 
 endmodule
