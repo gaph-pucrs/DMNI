@@ -6,7 +6,7 @@ module DMNI
     parameter BR_MON_BUFFER_SIZE = 8,
     parameter BR_SVC_BUFFER_SIZE = 4,
     parameter N_PE               = 16,
-    parameter TASK_PER_PE        = 4
+    parameter TASKS_PER_PE       = 4
 )
 (
     input logic                                    clk_i,
@@ -43,7 +43,7 @@ module DMNI
     /* BrLite Service interface */
     input  logic                                   br_req_svc_i,
     output logic                                   br_ack_svc_o,
-    input  brlite_svc_t                            br_svc_data_i
+    input  brlite_svc_t                            br_svc_data_i,
 
     /* BrLite Output interface */
     input  logic                                   br_local_busy_i,
@@ -101,7 +101,7 @@ module DMNI
     logic       [31:0]                                  hermes_size_2;
     logic       [31:0]                                  hermes_address;
     logic       [31:0]                                  hermes_address_2;
-    logic       [($clog2(BRLITE_MON_NSVC) - 1):0]       br_mon_class_clear;
+    logic       [31:0]                                  br_mon_task_clear;
     logic       [(HERMES_FLIT_SIZE - 1):0]              hermes_receive_flits_available;
     logic       [31:0][($clog2(BRLITE_MON_NSVC) - 1):0] br_mon_ptrs;
 
@@ -133,7 +133,7 @@ module DMNI
         .hermes_size_2_i                  (hermes_size_2                 ),
         .hermes_address_i                 (hermes_address                ),
         .hermes_address_2_i               (hermes_address_2              ),
-        .brlite_class_clear_i             (br_mon_class_clear            ),
+        .brlite_task_clear_i              (br_mon_task_clear             ),
         .brlite_mon_ptrs_i                (br_mon_ptrs                   ),
         .hermes_send_active_o             (hermes_send_active            ),
         .hermes_receive_active_o          (hermes_receive_active         ),
@@ -184,7 +184,7 @@ module DMNI
         .hermes_address_2_o               (hermes_address_2              ),
         .br_mon_clear_o                   (br_mon_clear                  ),
         .br_mon_clear_ack_i               (br_mon_clear_ack              ),
-        .br_mon_class_clear_o             (br_mon_class_clear            ),
+        .br_mon_task_clear_o              (br_mon_task_clear            ),
         .br_mon_ptrs_o                    (br_mon_ptrs                   ),
         .br_svc_rx_i                      (br_mon_buffer_tx              ),
         .br_svc_ack_o                     (br_mon_buffer_ack             ),
