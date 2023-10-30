@@ -7,8 +7,8 @@ module NI
     input  logic                                         clk_i,
     input  logic                                         rst_ni,
 
+    /* CPU Interface */
     output logic                                         irq_o,
-
     input  logic                                         cfg_we_i,
     input  dmni_mmr_t                                    cfg_addr_i,
     input  logic                                  [31:0] cfg_data_i,
@@ -20,7 +20,7 @@ module NI
     input  logic                                         hermes_receive_available_i,
     input  logic              [(HERMES_FLIT_SIZE - 1):0] hermes_receive_flits_available_i,
     output logic                                         hermes_start_o,
-    output logic                                         hermes_operation_o,
+    output hermes_op_t                                   hermes_operation_o,
     output logic                                  [31:0] hermes_size_o,
     output logic                                  [31:0] hermes_size_2_o,
     output logic                                  [31:0] hermes_address_o,
@@ -28,6 +28,7 @@ module NI
 
     /* BrLite Monitor */
     output logic                                         br_mon_clear_o,
+    input  logic                                         br_mon_clear_ack_i,
     output logic       [($clog2(BRLITE_MON_NSVC) - 1):0] br_mon_class_clear_o,
     output logic [31:0][($clog2(BRLITE_MON_NSVC) - 1):0] br_mon_ptrs_o,
 
@@ -56,7 +57,7 @@ module NI
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
-            DMNI_STATUS:                 cfg_data_o = {29{1'b0}, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
+            DMNI_STATUS:                 cfg_data_o = {28{1'b0}, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
             DMNI_IRQ_STATUS:             cfg_data_o = {30{1'b0}, br_svc_rx_i, hermes_receive_available_i};
 
             /* Hermes */
@@ -181,7 +182,7 @@ module NI
             br_mon_class_clear_o <= '0;
         end
         else begin
-            if (br_mon_clear_o) begin
+            if (br_mon_clear_ack_i) begin
                 br_mon_clear_o <= 1'b0;
             end
             else if (cfg_we_i && cfg_addr_i == DMNI_BR_MON_CLEAR) begin
