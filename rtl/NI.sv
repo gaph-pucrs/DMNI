@@ -15,6 +15,8 @@ module NI
     input  logic                                  [31:0] cfg_data_i,
     output logic                                  [31:0] cfg_data_o,
 
+    output logic                                         release_peripheral_o,
+
     /* Hermes MMRs */
     input  logic                                         hermes_send_active_i,
     input  logic                                         hermes_receive_active_i,
@@ -58,7 +60,7 @@ module NI
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
-            DMNI_STATUS:                 cfg_data_o = {{28{1'b0}}, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
+            DMNI_STATUS:                 cfg_data_o = {{27{1'b0}}, release_peripheral_o, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
             DMNI_IRQ_STATUS:             cfg_data_o = {{30{1'b0}}, br_svc_rx_i, hermes_receive_available_i};
 
             /* Hermes */
@@ -71,6 +73,13 @@ module NI
 
             default:                     cfg_data_o = '0;
         endcase
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            release_peripheral_o <= 1'b0;
+        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_RELEASE_PERIPHERAL)
+            release_peripheral_o <= cfg_data_i[0];
     end
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -20,6 +20,8 @@ module DMNI
     input  logic        [31:0]                     cfg_data_i,
     output logic        [31:0]                     cfg_data_o,
 
+    output logic                                   release_peripheral_o,
+
     /* Memory interface */
     output logic        [ 3:0]                     mem_we_o,
     output logic        [31:0]                     mem_addr_o,
@@ -174,6 +176,7 @@ module DMNI
         .cfg_addr_i                       (cfg_addr_i                    ),
         .cfg_data_i                       (cfg_data_i                    ),
         .cfg_data_o                       (cfg_data_o                    ),
+        .release_peripheral_o             (release_peripheral_o          ),
         .hermes_send_active_i             (hermes_send_active            ),
         .hermes_receive_active_i          (hermes_receive_active         ),
         .hermes_receive_available_i       (hermes_receive_available      ),
