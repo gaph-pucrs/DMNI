@@ -9,6 +9,7 @@ module NI
 
     /* CPU Interface */
     output logic                                         irq_o,
+    input  logic                                         cfg_en_i,
     input  logic                                         cfg_we_i,
     input  dmni_mmr_t                                    cfg_addr_i,
     input  logic                                  [31:0] cfg_data_i,
@@ -86,7 +87,7 @@ module NI
             hermes_size_2_o    <= '0;
         end
         else begin
-            if (cfg_we_i) begin
+            if (cfg_en_i && cfg_we_i) begin
                 case (cfg_addr_i)
                     DMNI_HERMES_START:     hermes_start_o     <= cfg_data_i[0];
                     DMNI_HERMES_OPERATION: hermes_operation_o <= hermes_op_t'(cfg_data_i[0]);
@@ -115,7 +116,7 @@ module NI
         else begin
             if (br_ack_i)
                 br_req_o <= 1'b0;
-            else if (cfg_we_i && cfg_addr_i == DMNI_BR_START)
+            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_START)
                 br_req_o <= cfg_data_i[0];
         end
     end
@@ -126,7 +127,7 @@ module NI
             br_data_o <= '0;
         end
         else begin
-            if (cfg_we_i) begin
+            if (cfg_en_i && cfg_we_i) begin
                 case (cfg_addr_i)
                     DMNI_BR_SERVICE:  br_data_o.service    <= cfg_data_i[1:0];
                     DMNI_BR_KSVC:     br_data_o.ksvc       <= cfg_data_i[7:0];
@@ -151,7 +152,7 @@ module NI
         else begin
             if (br_svc_ack_o)
                 br_svc_ack_o <= 1'b0;
-            else if (cfg_we_i && cfg_addr_i == DMNI_BR_SVC_POP)
+            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_SVC_POP)
                 br_svc_ack_o <= cfg_data_i[0];
         end
     end
@@ -165,7 +166,7 @@ module NI
             br_mon_ptrs_o <= '0;
         end
         else begin
-            if (cfg_we_i) begin
+            if (cfg_en_i && cfg_we_i) begin
                 case (cfg_addr_i)
                     DMNI_BR_MON_PTR_QOS: br_mon_ptrs_o[MONITOR_QOS] <= cfg_data_i;
                     DMNI_BR_MON_PTR_PWR: br_mon_ptrs_o[MONITOR_PWR] <= cfg_data_i;
@@ -185,7 +186,7 @@ module NI
             if (br_mon_clear_ack_i) begin
                 br_mon_clear_o <= 1'b0;
             end
-            else if (cfg_we_i && cfg_addr_i == DMNI_BR_MON_CLEAR) begin
+            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_MON_CLEAR) begin
                 br_mon_clear_o       <= 1'b1;
                 br_mon_task_clear_o <= cfg_data_i;
             end

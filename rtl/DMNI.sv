@@ -14,6 +14,7 @@ module DMNI
 
     /* CPU interface (MMR) */
     output logic                                   irq_o,
+    input  logic                                   cfg_en_i,
     input  logic                                   cfg_we_i,
     input  dmni_mmr_t                              cfg_addr_i,
     input  logic        [31:0]                     cfg_data_i,
@@ -168,6 +169,7 @@ module DMNI
         .clk_i                            (clk_i                         ),
         .rst_ni                           (rst_ni                        ),
         .irq_o                            (irq_o                         ),
+        .cfg_en_i                         (cfg_en_i                      ),
         .cfg_we_i                         (cfg_we_i                      ),
         .cfg_addr_i                       (cfg_addr_i                    ),
         .cfg_data_i                       (cfg_data_i                    ),
@@ -184,7 +186,7 @@ module DMNI
         .hermes_address_2_o               (hermes_address_2              ),
         .br_mon_clear_o                   (br_mon_clear                  ),
         .br_mon_clear_ack_i               (br_mon_clear_ack              ),
-        .br_mon_task_clear_o              (br_mon_task_clear            ),
+        .br_mon_task_clear_o              (br_mon_task_clear             ),
         .br_mon_ptrs_o                    (br_mon_ptrs                   ),
         .br_svc_rx_i                      (br_mon_buffer_tx              ),
         .br_svc_ack_o                     (br_mon_buffer_ack             ),
