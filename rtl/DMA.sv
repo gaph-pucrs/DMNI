@@ -3,7 +3,7 @@ module DMA
 #(
     parameter HERMES_FLIT_SIZE = 32,
     parameter N_PE             = 16,
-    parameter TASK_PER_PE      = 4
+    parameter TASKS_PER_PE      = 4
 )
 (
     input  logic                                               clk_i,
@@ -262,9 +262,9 @@ module DMA
 
     brlite_receive_t brlite_receive_state;
 
-    logic [15:0] mon_table [($clog2(N_PE) - 1):0][($clog2(TASK_PER_PE) - 1):0];
+    logic [15:0] mon_table [($clog2(N_PE) - 1):0][($clog2(TASKS_PER_PE) - 1):0];
 
-    logic [$clog2(TASK_PER_PE):0] task_idx; /* On purpose 1 bit more */
+    logic [($clog2(TASKS_PER_PE + 1) - 1):0] task_idx; /* On purpose 1 bit more */
 
     logic task_found;
     assign task_found = (mon_table[brlite_data_i.seq_source][task_idx] == brlite_data_i.producer);
@@ -283,7 +283,7 @@ module DMA
                     brlite_receive_next_state = BRLITE_RECEIVE_IDLE;
             end
             BRLITE_RECEIVE_SEARCH: begin
-                if (task_idx == TASK_PER_PE)
+                if (task_idx == TASKS_PER_PE)
                     brlite_receive_next_state = has_free
                         ? BRLITE_RECEIVE_POPULATE_TABLE
                         : BRLITE_RECEIVE_ACK;
@@ -318,7 +318,7 @@ module DMA
         end
     end
 
-    logic [($clog2(TASK_PER_PE) - 1):0] free_idx;
+    logic [($clog2(TASKS_PER_PE) - 1):0] free_idx;
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             task_idx <= '0;
@@ -336,7 +336,7 @@ module DMA
                     task_idx <= task_idx + 1'b1;
                     if (!has_free && mon_table[brlite_data_i.seq_source][task_idx] == '1) begin
                         has_free <= 1'b1;
-                        free_idx <= task_idx[($clog2(TASK_PER_PE) - 1):0];
+                        free_idx <= task_idx;
                     end
                 end
             end
@@ -353,8 +353,8 @@ module DMA
         ? brlite_data_i.payload
         : brlite_data_i.producer;
 
-    logic [($clog2(TASK_PER_PE) + 18):0] brlite_offset;
-    assign brlite_offset = {brlite_data_i.seq_source, task_idx[($clog2(TASK_PER_PE) - 1):0], 3'b0};
+    logic [($clog2(TASKS_PER_PE) + 18):0] brlite_offset;
+    assign brlite_offset = {brlite_data_i.seq_source, task_idx, 3'b0};
 
     logic [31:0] brlite_addr_base;
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -380,7 +380,7 @@ module DMA
 
     monitor_t monitor_state;
 
-    logic [$clog2(TASK_PER_PE):0] clear_idx; /* On purpose 1 bit more */
+    logic [($clog2(TASKS_PER_PE + 1) - 1):0] clear_idx; /* On purpose 1 bit more */
 
     logic clear_found;
     assign clear_found = (mon_table[brlite_task_clear_i[31:16]][clear_idx] == brlite_task_clear_i[15:0]);
@@ -393,7 +393,7 @@ module DMA
                     ? MONITOR_SEARCH 
                     : MONITOR_IDLE;
             MONITOR_SEARCH: begin
-                if (clear_idx == TASK_PER_PE)
+                if (clear_idx == TASKS_PER_PE)
                     monitor_next_state = MONITOR_IGNORE;
                 else
                     monitor_next_state = clear_found ? MONITOR_CLEAR : MONITOR_SEARCH;
@@ -427,7 +427,7 @@ module DMA
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             for (int p = 0; p < N_PE; p++)
-                for (int t = 0; t < TASK_PER_PE; t++)
+                for (int t = 0; t < TASKS_PER_PE; t++)
                     mon_table[p][t] <= '1;
         end
         else begin
