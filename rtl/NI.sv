@@ -76,7 +76,7 @@ module NI
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni) begin
+        if (!rst_ni)
             release_peripheral_o <= 1'b0;
         else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_RELEASE_PERIPHERAL)
             release_peripheral_o <= cfg_data_i[0];
