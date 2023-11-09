@@ -1,11 +1,16 @@
 package DMNIPkg;
 
-    parameter DMNI_MMR_SIZE = 26;
+    parameter DMNI_MMR_SIZE = 28;
 
     typedef enum logic [($clog2(DMNI_MMR_SIZE) - 1):0] {
         DMNI_STATUS,
         DMNI_IRQ_STATUS,
         DMNI_RELEASE_PERIPHERAL,
+        DMNI_ADDRESS,
+        DMNI_MANYCORE_SIZE,
+        DMNI_TASKS_PER_PE,
+        DMNI_IMEM_PAGE_SZ,
+        DMNI_DMEM_PAGE_SZ,
         DMNI_HERMES_START,
         DMNI_HERMES_OPERATION,
         DMNI_HERMES_SIZE,

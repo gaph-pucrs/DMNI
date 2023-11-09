@@ -1,7 +1,13 @@
 module NI 
     import DMNIPkg::*;
 #(
-    parameter HERMES_FLIT_SIZE = 32
+    parameter              HERMES_FLIT_SIZE = 32,
+    parameter              N_PE_X           = 2,
+    parameter              N_PE_Y           = 2,
+    parameter              TASKS_PER_PE     = 1,
+    parameter              IMEM_PAGE_SZ     = 32768,
+    parameter              DMEM_PAGE_SZ     = 32768,
+    parameter logic [15:0] ADDRESS          = 16'b0
 )
 (
     input  logic                                         clk_i,
@@ -57,11 +63,24 @@ module NI
 //  MMR Read
 ////////////////////////////////////////////////////////////////////////////////
 
+    // 24'h200000:     data_o <= 32'h00008000;     /* Page size */
+    // 24'h200004:     data_o <= 32'h00000000;     /* Address -> 0 for single CPU */
+    // 24'h200008:     data_o <= 32'h00000001;     /* Number of tasks. 0 = OS only */
+    // 24'h20000C:     data_o <= 32'h00000001;     /* 1 PE in X-axis */
+    // 24'h205010:     data_o <= 32'h00000001;     /* 1 PE in Y-axis */
+
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
             DMNI_STATUS:                 cfg_data_o = {{27{1'b0}}, release_peripheral_o, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
             DMNI_IRQ_STATUS:             cfg_data_o = {{30{1'b0}}, br_svc_rx_i, hermes_receive_available_i};
+
+            /* Software config */
+            DMNI_ADDRESS:                cfg_data_o = {16'b0, ADDRESS};
+            DMNI_MANYCORE_SIZE:          cfg_data_o = {7'b0, N_PE_X[8:0], 7'b0, N_PE_Y[8:0]};
+            DMNI_TASKS_PER_PE:           cfg_data_o = 32'(TASKS_PER_PE);
+            DMNI_IMEM_PAGE_SZ:           cfg_data_o = 32'(IMEM_PAGE_SZ);
+            DMNI_DMEM_PAGE_SZ:           cfg_data_o = 32'(DMEM_PAGE_SZ);
 
             /* Hermes */
             DMNI_HERMES_FLITS_AVAILABLE: cfg_data_o = {{(32 - HERMES_FLIT_SIZE){1'b0}}, hermes_receive_flits_available_i};

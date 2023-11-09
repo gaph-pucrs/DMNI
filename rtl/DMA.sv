@@ -2,8 +2,9 @@ module DMA
     import DMNIPkg::*;
 #(
     parameter HERMES_FLIT_SIZE = 32,
-    parameter N_PE             = 16,
-    parameter TASKS_PER_PE      = 4
+    parameter N_PE_X           = 2,
+    parameter N_PE_Y           = 2,
+    parameter TASKS_PER_PE     = 1
 )
 (
     input  logic                                               clk_i,
@@ -46,6 +47,8 @@ module DMA
     output logic                                               brlite_clear_ack_o,
     output logic       [(HERMES_FLIT_SIZE - 1):0]              hermes_receive_flits_available_o
 );
+
+    localparam N_PE = N_PE_X * N_PE_Y;
 
     typedef enum {
         ARBIT_SEND,

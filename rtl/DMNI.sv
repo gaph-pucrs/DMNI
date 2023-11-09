@@ -1,12 +1,16 @@
 module DMNI
     import DMNIPkg::*;
 #(
-    parameter HERMES_FLIT_SIZE   = 32,
-    parameter HERMES_BUFFER_SIZE = 16,
-    parameter BR_MON_BUFFER_SIZE = 8,
-    parameter BR_SVC_BUFFER_SIZE = 4,
-    parameter N_PE               = 16,
-    parameter TASKS_PER_PE       = 4
+    parameter              HERMES_FLIT_SIZE   = 32,
+    parameter              HERMES_BUFFER_SIZE = 16,
+    parameter              BR_MON_BUFFER_SIZE = 8,
+    parameter              BR_SVC_BUFFER_SIZE = 4,
+    parameter              N_PE_X             = 2,
+    parameter              N_PE_Y             = 2,
+    parameter              TASKS_PER_PE       = 1,
+    parameter              IMEM_PAGE_SZ       = 32768,
+    parameter              DMEM_PAGE_SZ       = 32768,
+    parameter logic [15:0] ADDRESS            = 16'b0
 )
 (
     input logic                                    clk_i,
@@ -110,7 +114,8 @@ module DMNI
 
     DMA #(
         .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),
-        .N_PE             (N_PE            ),
+        .N_PE_X           (N_PE_X          ),
+        .N_PE_Y           (N_PE_Y          ),
         .TASKS_PER_PE     (TASKS_PER_PE    )
     )
     dma (
@@ -165,7 +170,13 @@ module DMNI
     );
 
     NI #(
-        .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE)
+        .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),
+        .N_PE_X           (N_PE_X          ),
+        .N_PE_Y           (N_PE_Y          ),
+        .TASKS_PER_PE     (TASKS_PER_PE    ),
+        .IMEM_PAGE_SZ     (IMEM_PAGE_SZ    ),
+        .DMEM_PAGE_SZ     (DMEM_PAGE_SZ    ),
+        .ADDRESS          (ADDRESS         )
     )
     ni (
         .clk_i                            (clk_i                         ),
