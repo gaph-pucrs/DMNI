@@ -57,23 +57,19 @@ module NI
 //  IRQ Control
 ////////////////////////////////////////////////////////////////////////////////
 
-    assign irq_o = (br_svc_rx_i || hermes_receive_available_i);
+    logic pending_svc;
+
+    assign irq_o = (pending_svc || br_svc_rx_i || hermes_receive_available_i);
 
 ////////////////////////////////////////////////////////////////////////////////
 //  MMR Read
 ////////////////////////////////////////////////////////////////////////////////
 
-    // 24'h200000:     data_o <= 32'h00008000;     /* Page size */
-    // 24'h200004:     data_o <= 32'h00000000;     /* Address -> 0 for single CPU */
-    // 24'h200008:     data_o <= 32'h00000001;     /* Number of tasks. 0 = OS only */
-    // 24'h20000C:     data_o <= 32'h00000001;     /* 1 PE in X-axis */
-    // 24'h205010:     data_o <= 32'h00000001;     /* 1 PE in Y-axis */
-
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
             DMNI_STATUS:                 cfg_data_o = {{27{1'b0}}, release_peripheral_o, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
-            DMNI_IRQ_STATUS:             cfg_data_o = {{30{1'b0}}, br_svc_rx_i, hermes_receive_available_i};
+            DMNI_IRQ_STATUS:             cfg_data_o = {{29{1'b0}}, pending_svc, br_svc_rx_i, hermes_receive_available_i};
 
             /* Software config */
             DMNI_ADDRESS:                cfg_data_o = {16'b0, ADDRESS};
@@ -92,6 +88,13 @@ module NI
 
             default:                     cfg_data_o = '0;
         endcase
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            pending_svc <= 1'b0;
+        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_PENDING_SVC)
+            pending_svc <= cfg_data_i[0];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
