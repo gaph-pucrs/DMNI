@@ -17,7 +17,7 @@ module NI
     output logic                                         irq_o,
     input  logic                                         cfg_en_i,
     input  logic                                         cfg_we_i,
-    input  dmni_mmr_t                                    cfg_addr_i,
+    input  logic         [($clog2(DMNI_MMR_SIZE) - 1):0] cfg_addr_i,
     input  logic                                  [31:0] cfg_data_i,
     output logic                                  [31:0] cfg_data_o,
 
@@ -65,29 +65,38 @@ module NI
 //  MMR Read
 ////////////////////////////////////////////////////////////////////////////////
 
+    logic [31:0] cfg_data;
+
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
-            DMNI_STATUS:                 cfg_data_o = {{27{1'b0}}, release_peripheral_o, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
-            DMNI_IRQ_STATUS:             cfg_data_o = {{29{1'b0}}, pending_svc, br_svc_rx_i, hermes_receive_available_i};
+            DMNI_STATUS:                 cfg_data = {{27{1'b0}}, release_peripheral_o, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
+            DMNI_IRQ_STATUS:             cfg_data = {{29{1'b0}}, pending_svc, br_svc_rx_i, hermes_receive_available_i};
 
             /* Software config */
-            DMNI_ADDRESS:                cfg_data_o = {16'b0, ADDRESS};
-            DMNI_MANYCORE_SIZE:          cfg_data_o = {7'b0, N_PE_X[8:0], 7'b0, N_PE_Y[8:0]};
-            DMNI_TASKS_PER_PE:           cfg_data_o = 32'(TASKS_PER_PE);
-            DMNI_IMEM_PAGE_SZ:           cfg_data_o = 32'(IMEM_PAGE_SZ);
-            DMNI_DMEM_PAGE_SZ:           cfg_data_o = 32'(DMEM_PAGE_SZ);
+            DMNI_ADDRESS:                cfg_data = {16'b0, ADDRESS};
+            DMNI_MANYCORE_SIZE:          cfg_data = {7'b0, N_PE_X[8:0], 7'b0, N_PE_Y[8:0]};
+            DMNI_TASKS_PER_PE:           cfg_data = 32'(TASKS_PER_PE);
+            DMNI_IMEM_PAGE_SZ:           cfg_data = 32'(IMEM_PAGE_SZ);
+            DMNI_DMEM_PAGE_SZ:           cfg_data = 32'(DMEM_PAGE_SZ);
 
             /* Hermes */
-            DMNI_HERMES_FLITS_AVAILABLE: cfg_data_o = {{(32 - HERMES_FLIT_SIZE){1'b0}}, hermes_receive_flits_available_i};
+            DMNI_HERMES_FLITS_AVAILABLE: cfg_data = {{(32 - HERMES_FLIT_SIZE){1'b0}}, hermes_receive_flits_available_i};
 
             /* BrLite Service */
-            DMNI_BR_SVC_KSVC:            cfg_data_o = {{24{1'b0}}, br_svc_data_i.ksvc};
-            DMNI_BR_SVC_PRODUCER:        cfg_data_o = {br_svc_data_i.seq_source, br_svc_data_i.producer};
-            DMNI_BR_SVC_PAYLOAD:         cfg_data_o = br_svc_data_i.payload;
+            DMNI_BR_SVC_KSVC:            cfg_data = {{24{1'b0}}, br_svc_data_i.ksvc};
+            DMNI_BR_SVC_PRODUCER:        cfg_data = {br_svc_data_i.seq_source, br_svc_data_i.producer};
+            DMNI_BR_SVC_PAYLOAD:         cfg_data = br_svc_data_i.payload;
 
-            default:                     cfg_data_o = '0;
+            default:                     cfg_data = '0;
         endcase
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            cfg_data_o <= '0;
+        else if (cfg_en_i && !cfg_we_i)
+            cfg_data_o <= cfg_data;
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin

@@ -13,50 +13,50 @@ module DMNI
     parameter logic [15:0] ADDRESS            = 16'b0
 )
 (
-    input logic                                    clk_i,
-    input logic                                    rst_ni,
+    input logic                                         clk_i,
+    input logic                                         rst_ni,
 
     /* CPU interface (MMR) */
-    output logic                                   irq_o,
-    input  logic                                   cfg_en_i,
-    input  logic                                   cfg_we_i,
-    input  dmni_mmr_t                              cfg_addr_i,
-    input  logic        [31:0]                     cfg_data_i,
-    output logic        [31:0]                     cfg_data_o,
+    output logic                                        irq_o,
+    input  logic                                        cfg_en_i,
+    input  logic                                        cfg_we_i,
+    input  logic        [($clog2(DMNI_MMR_SIZE) - 1):0] cfg_addr_i,
+    input  logic        [31:0]                          cfg_data_i,
+    output logic        [31:0]                          cfg_data_o,
 
-    output logic                                   release_peripheral_o,
+    output logic                                        release_peripheral_o,
 
     /* Memory interface */
-    output logic        [ 3:0]                     mem_we_o,
-    output logic        [31:0]                     mem_addr_o,
-    input  logic        [31:0]                     mem_data_i,
-    output logic        [31:0]                     mem_data_o,
+    output logic        [ 3:0]                          mem_we_o,
+    output logic        [31:0]                          mem_addr_o,
+    input  logic        [31:0]                          mem_data_i,
+    output logic        [31:0]                          mem_data_o,
 
     /* Hermes input interface */
-    input  logic                                   noc_rx_i,
-    output logic                                   noc_credit_o,
-    input  logic        [(HERMES_FLIT_SIZE - 1):0] noc_data_i,
+    input  logic                                        noc_rx_i,
+    output logic                                        noc_credit_o,
+    input  logic        [(HERMES_FLIT_SIZE - 1):0]      noc_data_i,
 
     /* Hermes output interface */
-    output logic                                   noc_tx_o,
-    input  logic                                   noc_credit_i,
-    output logic        [(HERMES_FLIT_SIZE - 1):0] noc_data_o,
+    output logic                                        noc_tx_o,
+    input  logic                                        noc_credit_i,
+    output logic        [(HERMES_FLIT_SIZE - 1):0]      noc_data_o,
 
     /* BrLite Monitor interface */
-    input  logic                                   br_req_mon_i,
-    output logic                                   br_ack_mon_o,
-    input  brlite_mon_t                            br_mon_data_i,
+    input  logic                                        br_req_mon_i,
+    output logic                                        br_ack_mon_o,
+    input  brlite_mon_t                                 br_mon_data_i,
 
     /* BrLite Service interface */
-    input  logic                                   br_req_svc_i,
-    output logic                                   br_ack_svc_o,
-    input  brlite_svc_t                            br_svc_data_i,
+    input  logic                                        br_req_svc_i,
+    output logic                                        br_ack_svc_o,
+    input  brlite_svc_t                                 br_svc_data_i,
 
     /* BrLite Output interface */
-    input  logic                                   br_local_busy_i,
-    output logic                                   br_req_o,
-    input  logic                                   br_ack_i,
-    output brlite_out_t                            br_data_o
+    input  logic                                        br_local_busy_i,
+    output logic                                        br_req_o,
+    input  logic                                        br_ack_i,
+    output brlite_out_t                                 br_data_o
 );
 
     logic                            hermes_buffer_tx;
