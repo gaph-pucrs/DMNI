@@ -244,7 +244,13 @@ module DMA
             hermes_send_state <= hermes_send_next_state;
     end
 
-    assign noc_tx_o = (hermes_send_state == HERMES_SEND_DATA);
+    /* Should be registered. The memory data will be available 1 cycle after read */
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            noc_tx_o <= 1'b0;
+        else
+            noc_tx_o = (hermes_send_state == HERMES_SEND_DATA && current_arbit == ARBIT_SEND);
+    end
 
     assign noc_data_o = mem_data_i;
 
