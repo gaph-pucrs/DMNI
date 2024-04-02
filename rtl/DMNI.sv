@@ -110,7 +110,7 @@ module DMNI
     logic       [31:0]                                  hermes_address_2;
     logic       [31:0]                                  br_mon_task_clear;
     logic       [(HERMES_FLIT_SIZE - 1):0]              hermes_receive_flits_available;
-    logic       [31:0][($clog2(BRLITE_MON_NSVC) - 1):0] br_mon_ptrs;
+    logic       [($clog2(BRLITE_MON_NSVC) - 1):0][31:0] br_mon_ptrs;
 
     DMA #(
         .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),

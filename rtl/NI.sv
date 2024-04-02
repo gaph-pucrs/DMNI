@@ -39,7 +39,7 @@ module NI
     output logic                                         br_mon_clear_o,
     input  logic                                         br_mon_clear_ack_i,
     output logic [31:0]                                  br_mon_task_clear_o,
-    output logic [31:0][($clog2(BRLITE_MON_NSVC) - 1):0] br_mon_ptrs_o,
+    output logic [($clog2(BRLITE_MON_NSVC) - 1):0][31:0] br_mon_ptrs_o,
 
     /* BrLite Service */
     input  logic                                         br_svc_rx_i,
