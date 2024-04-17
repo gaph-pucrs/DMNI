@@ -1,4 +1,6 @@
-module NI 
+`include "DMNIPkg.sv"
+
+module NI
     import DMNIPkg::*;
 #(
     parameter              HERMES_FLIT_SIZE = 32,

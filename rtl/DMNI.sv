@@ -1,3 +1,5 @@
+`include "DMNIPkg.sv"
+
 module DMNI
     import DMNIPkg::*;
 #(

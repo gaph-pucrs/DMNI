@@ -1,3 +1,6 @@
+`ifndef DMNI_PKG
+`define DMNI_PKG
+
 package DMNIPkg;
 
     parameter DMNI_MMR_SIZE = 29;
@@ -68,3 +71,5 @@ package DMNIPkg;
     } brlite_out_t;
 
 endpackage
+
+`endif
