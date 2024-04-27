@@ -187,6 +187,12 @@ module DMA
     logic [31:0] hermes_send_addr_2;
     logic [31:0] hermes_send_size;
     logic [31:0] hermes_send_size_2;
+
+    logic [31:0] hermes_send_addr_r;
+    logic [31:0] hermes_send_addr_2_r;
+    logic [31:0] hermes_send_size_r;
+    logic [31:0] hermes_send_size_2_r;
+
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             hermes_send_addr   <= '0;
@@ -196,22 +202,46 @@ module DMA
         end
         else begin
             if (hermes_send_state == HERMES_SEND_IDLE) begin
-                hermes_send_addr     <= hermes_address_i;
-                hermes_send_addr_2   <= hermes_address_2_i;
-                hermes_send_size     <= hermes_size_i;
-                hermes_send_size_2   <= hermes_size_2_i;
+                hermes_send_addr   <= hermes_address_i;
+                hermes_send_addr_2 <= hermes_address_2_i;
+                hermes_send_size   <= hermes_size_i;
+                hermes_send_size_2 <= hermes_size_2_i;
             end
-            else if (can_send && hermes_send_state == HERMES_SEND_DATA) begin
-                if (hermes_send_size != '0) begin
-                    hermes_send_addr <= hermes_send_addr + 32'h4;
-                    hermes_send_size <= hermes_send_size - 32'b1;
+            else if (hermes_send_state == HERMES_SEND_DATA) begin
+                if (can_send) begin
+                    if (hermes_send_size != '0) begin
+                        hermes_send_addr <= hermes_send_addr + 32'h4;
+                        hermes_send_size <= hermes_send_size - 32'b1;
+                    end
+                    else begin
+                        hermes_send_addr_2 <= hermes_send_addr_2 + 32'h4;
+                        hermes_send_size_2 <= hermes_send_size_2 - 32'b1;
+                    end
                 end
                 else begin
-                    hermes_send_addr_2 <= hermes_send_addr_2 + 32'h4;
-                    hermes_send_size_2 <= hermes_send_size_2 - 32'b1;
+                    hermes_send_addr   <= hermes_send_addr_r;
+                    hermes_send_addr_2 <= hermes_send_addr_2_r;
+                    hermes_send_size   <= hermes_send_size_r;
+                    hermes_send_size_2 <= hermes_send_size_2_r;
                 end
             end
-        end            
+        end
+    end
+
+    /* This is needed as the credit will drop after the memory address has changed */
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            hermes_send_addr_r   <= '0;
+            hermes_send_addr_2_r <= '0;
+            hermes_send_size_r   <= '0;
+            hermes_send_size_2_r <= '0;
+        end
+        else begin
+            hermes_send_addr_r   <= hermes_send_addr;
+            hermes_send_addr_2_r <= hermes_send_addr_2;
+            hermes_send_size_r   <= hermes_send_size;
+            hermes_send_size_2_r <= hermes_send_size_2;
+        end
     end
 
     hermes_send_t hermes_send_next_state;
