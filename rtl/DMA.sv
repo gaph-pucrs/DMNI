@@ -321,10 +321,10 @@ module DMA
 
     logic [15:0] mon_table [(N_PE - 1):0][(TASKS_PER_PE - 1):0];
 
-    logic [($clog2(TASKS_PER_PE+1) - 1):0] task_idx; /* On purpose 1 bit more to compare with last+1 */
+    task_idx_t task_idx;
 
     logic task_found;
-    assign task_found = (mon_table[pe_idx_t'(brlite_data_i.seq_source)][task_idx_t'(task_idx)] == brlite_data_i.producer);
+    assign task_found = (mon_table[pe_idx_t'(brlite_data_i.seq_source)][task_idx] == brlite_data_i.producer);
 
     logic has_free;
 
@@ -340,7 +340,7 @@ module DMA
                     brlite_receive_next_state = BRLITE_RECEIVE_IDLE;
             end
             BRLITE_RECEIVE_SEARCH: begin
-                if (task_idx == TASKS_PER_PE)
+                if (task_idx == task_idx_t'(TASKS_PER_PE - 1) && !task_found)
                     brlite_receive_next_state = has_free
                         ? BRLITE_RECEIVE_POPULATE_TABLE
                         : BRLITE_RECEIVE_ACK;
@@ -400,7 +400,7 @@ module DMA
             else if (brlite_receive_state == BRLITE_RECEIVE_SEARCH) begin
                 if (!task_found) begin
                     task_idx <= task_idx + 1'b1;
-                    if (!has_free && mon_table[pe_idx_t'(brlite_data_i.seq_source)][task_idx_t'(task_idx)] == '1) begin
+                    if (!has_free && mon_table[pe_idx_t'(brlite_data_i.seq_source)][task_idx] == '1) begin
                         has_free <= 1'b1;
                         free_idx <= task_idx;
                     end
@@ -420,7 +420,7 @@ module DMA
         : 32'(brlite_data_i.producer);
 
     logic [(((TASKS_PER_PE == 1) ? 0 : ($clog2(TASKS_PER_PE) - 1)) + 16):0] brlite_offset; /* Add 16 bits from address */
-    assign brlite_offset = {brlite_data_i.seq_source, task_idx_t'(task_idx)};
+    assign brlite_offset = {brlite_data_i.seq_source, task_idx};
 
     /* Fix it later, reducing the number of bits to the minimum really necessary */
     /* verilator lint_off UNUSEDSIGNAL */
@@ -450,10 +450,10 @@ module DMA
 
     monitor_t monitor_state;
 
-    logic [($clog2(TASKS_PER_PE + 1) - 1):0] clear_idx; /* On purpose 1 bit more to hold TASKS_PER_PE */
+    task_idx_t clear_idx;
 
     logic clear_found;
-    assign clear_found = (mon_table[pe_idx_t'(brlite_task_clear_i[31:16])][task_idx_t'(clear_idx)] == brlite_task_clear_i[15:0]);
+    assign clear_found = (mon_table[pe_idx_t'(brlite_task_clear_i[31:16])][clear_idx] == brlite_task_clear_i[15:0]);
 
     monitor_t monitor_next_state;
     always_comb begin
@@ -463,7 +463,7 @@ module DMA
                     ? MONITOR_SEARCH 
                     : MONITOR_IDLE;
             MONITOR_SEARCH: begin
-                if (clear_idx == TASKS_PER_PE)
+                if (clear_idx == task_idx_t'(TASKS_PER_PE - 1) && !clear_found)
                     monitor_next_state = MONITOR_IGNORE;
                 else
                     monitor_next_state = clear_found ? MONITOR_CLEAR : MONITOR_SEARCH;
@@ -507,7 +507,7 @@ module DMA
                 mon_table[pe_idx_t'(brlite_data_i.seq_source)][free_idx] <= brlite_data_i.producer;
 
             if (monitor_state == MONITOR_CLEAR)
-                mon_table[pe_idx_t'(brlite_task_clear_i[31:16])][task_idx_t'(clear_idx)] <= '1;
+                mon_table[pe_idx_t'(brlite_task_clear_i[31:16])][clear_idx] <= '1;
         end
     end
 
