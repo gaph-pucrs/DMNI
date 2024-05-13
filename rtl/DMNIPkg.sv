@@ -1,3 +1,16 @@
+/**
+ * DMNI
+ * @file DMNIPkg.sv
+ *
+ * @author Angelo Elias Dal Zotto (angelo.dalzotto@edu.pucrs.br)
+ * GAPH - Hardware Design Support Group (https://corfu.pucrs.br)
+ * PUCRS - Pontifical Catholic University of Rio Grande do Sul (http://pucrs.br/)
+ *
+ * @date October 2023
+ *
+ * @brief DMNI package
+ */
+
 `ifndef DMNI_PKG
 `define DMNI_PKG
 
