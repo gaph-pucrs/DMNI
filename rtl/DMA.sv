@@ -191,8 +191,7 @@ module DMA
     hermes_send_t hermes_send_state;
 
     logic can_send;
-    logic can_send_r;
-
+    logic noc_ack_r;
     always_comb begin
         can_send = (
             noc_ack_i 
@@ -200,11 +199,12 @@ module DMA
         );
     end
 
+
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (rst_ni == 1'b0)
-            can_send_r <= 1'b0;
+            noc_ack_r <= 1'b1;
         else
-            can_send_r <= can_send;
+            noc_ack_r <= noc_ack_i;
     end
 
     logic [31:0] hermes_send_addr;
@@ -231,17 +231,20 @@ module DMA
                 hermes_send_size   <= hermes_size_i;
                 hermes_send_size_2 <= hermes_size_2_i;
             end
-            else if (can_send) begin
-                if (hermes_send_size != '0) begin
-                    hermes_send_addr <= hermes_send_addr + 32'h4;
-                    hermes_send_size <= hermes_send_size - 32'b1;
-                end
-                else begin
-                    hermes_send_addr_2 <= hermes_send_addr_2 + 32'h4;
-                    hermes_send_size_2 <= hermes_send_size_2 - 32'b1;
+            else if (noc_ack_i) begin
+                if (current_arbit == ARBIT_SEND) begin
+                    if (hermes_send_size != '0) begin
+                        hermes_send_addr <= hermes_send_addr + 32'h4;
+                        hermes_send_size <= hermes_send_size - 32'b1;
+                    end
+                    else begin
+                        hermes_send_addr_2 <= hermes_send_addr_2 + 32'h4;
+                        hermes_send_size_2 <= hermes_send_size_2 - 32'b1;
+                    end
                 end
             end
-            else if (!can_send && can_send_r) begin /* Credit drop, roll back address and size */
+            else if (noc_ack_r) begin
+                /* Credit drop, roll back address and size */
                 hermes_send_addr   <= hermes_send_addr_r;
                 hermes_send_addr_2 <= hermes_send_addr_2_r;
                 hermes_send_size   <= hermes_send_size_r;
@@ -258,7 +261,7 @@ module DMA
             hermes_send_size_r   <= '0;
             hermes_send_size_2_r <= '0;
         end
-        else if (can_send) begin
+        else if (noc_ack_i) begin
             hermes_send_addr_r   <= hermes_send_addr;
             hermes_send_addr_2_r <= hermes_send_addr_2;
             hermes_send_size_r   <= hermes_send_size;
@@ -281,8 +284,12 @@ module DMA
                     ? HERMES_SEND_DATA
                     : HERMES_SEND_PRELOAD;
             HERMES_SEND_DATA: begin
-                if (can_send) begin
+                if (!noc_ack_i) begin
+                    hermes_send_next_state = HERMES_SEND_PRELOAD;
+                end 
+                else begin
                     if (
+                        current_arbit == ARBIT_SEND &&
                         (hermes_send_size == 32'b1 && hermes_send_size_2 == '0)
                         || (hermes_send_size == '0 && hermes_send_size_2 == 32'b1)
                     )
@@ -290,12 +297,9 @@ module DMA
                     else
                         hermes_send_next_state = HERMES_SEND_DATA;
                 end
-                else begin
-                    hermes_send_next_state = HERMES_SEND_PRELOAD;
-                end
             end
             HERMES_SEND_STOP:
-                hermes_send_next_state = can_send
+                hermes_send_next_state = (noc_ack_i && current_arbit == ARBIT_SEND)
                     ? HERMES_SEND_IDLE
                     : HERMES_SEND_STOP;
             default:
@@ -310,7 +314,7 @@ module DMA
             hermes_send_state <= hermes_send_next_state;
     end
 
-    assign noc_tx_o = (hermes_send_state == HERMES_SEND_DATA || hermes_send_state == HERMES_SEND_STOP);
+    assign noc_tx_o = (hermes_send_state == HERMES_SEND_DATA || hermes_send_state == HERMES_SEND_STOP) && current_arbit == ARBIT_SEND;
     assign noc_data_o = mem_data_i;
     assign hermes_send_active_o = (hermes_send_state != HERMES_SEND_IDLE);
 
