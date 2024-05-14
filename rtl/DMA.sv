@@ -191,7 +191,7 @@ module DMA
     hermes_send_t hermes_send_state;
 
     logic can_send;
-    logic noc_ack_r;
+    logic can_send_r;
     always_comb begin
         can_send = (
             noc_ack_i 
@@ -202,9 +202,9 @@ module DMA
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (rst_ni == 1'b0)
-            noc_ack_r <= 1'b1;
+            can_send_r <= 1'b1;
         else
-            noc_ack_r <= noc_ack_i;
+            can_send_r <= can_send;
     end
 
     logic [31:0] hermes_send_addr;
@@ -231,19 +231,17 @@ module DMA
                 hermes_send_size   <= hermes_size_i;
                 hermes_send_size_2 <= hermes_size_2_i;
             end
-            else if (noc_ack_i) begin
-                if (current_arbit == ARBIT_SEND) begin
-                    if (hermes_send_size != '0) begin
-                        hermes_send_addr <= hermes_send_addr + 32'h4;
-                        hermes_send_size <= hermes_send_size - 32'b1;
-                    end
-                    else begin
-                        hermes_send_addr_2 <= hermes_send_addr_2 + 32'h4;
-                        hermes_send_size_2 <= hermes_send_size_2 - 32'b1;
-                    end
+            else if (can_send) begin
+                if (hermes_send_size != '0) begin
+                    hermes_send_addr <= hermes_send_addr + 32'h4;
+                    hermes_send_size <= hermes_send_size - 32'b1;
+                end
+                else begin
+                    hermes_send_addr_2 <= hermes_send_addr_2 + 32'h4;
+                    hermes_send_size_2 <= hermes_send_size_2 - 32'b1;
                 end
             end
-            else if (noc_ack_r) begin
+            else if (can_send_r) begin
                 /* Credit drop, roll back address and size */
                 hermes_send_addr   <= hermes_send_addr_r;
                 hermes_send_addr_2 <= hermes_send_addr_2_r;
@@ -284,12 +282,11 @@ module DMA
                     ? HERMES_SEND_DATA
                     : HERMES_SEND_PRELOAD;
             HERMES_SEND_DATA: begin
-                if (!noc_ack_i) begin
+                if (!can_send) begin
                     hermes_send_next_state = HERMES_SEND_PRELOAD;
                 end 
                 else begin
                     if (
-                        current_arbit == ARBIT_SEND &&
                         (hermes_send_size == 32'b1 && hermes_send_size_2 == '0)
                         || (hermes_send_size == '0 && hermes_send_size_2 == 32'b1)
                     )
