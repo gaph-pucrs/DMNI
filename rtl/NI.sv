@@ -16,7 +16,6 @@
 module NI
     import DMNIPkg::*;
 #(
-    parameter              HERMES_FLIT_SIZE = 32,
     parameter              N_PE_X           = 2,
     parameter              N_PE_Y           = 2,
     parameter              TASKS_PER_PE     = 1,
