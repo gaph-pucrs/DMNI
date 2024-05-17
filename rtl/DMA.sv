@@ -27,11 +27,13 @@ module DMA
 
     /* Hermes input interface (RECEIVE) */
     input  logic                                               noc_rx_i,
+    input  logic                                               noc_eop_i,
     output logic                                               noc_credit_o,
     input  logic [(HERMES_FLIT_SIZE - 1):0]                    noc_data_i,
 
     /* Hermes output interface (SEND) */
     output logic                                               noc_tx_o,
+    output logic                                               noc_eop_o,
     input  logic                                               noc_ack_i,
     output logic [(HERMES_FLIT_SIZE - 1):0]                    noc_data_o,
 
@@ -59,8 +61,7 @@ module DMA
     output logic                                               hermes_send_active_o,
     output logic                                               hermes_receive_active_o,
     output logic                                               hermes_receive_available_o,
-    output logic                                               brlite_clear_ack_o,
-    output logic       [(HERMES_FLIT_SIZE - 1):0]              hermes_receive_flits_available_o
+    output logic                                               brlite_clear_ack_o
 );
 
     localparam N_PE = N_PE_X * N_PE_Y;
@@ -77,11 +78,10 @@ module DMA
 // NoC Receive FSM
 ////////////////////////////////////////////////////////////////////////////////
 
-    typedef enum logic [3:0] {  
-        HERMES_RECEIVE_HEADER = 4'b0001,
-        HERMES_RECEIVE_SIZE   = 4'b0010,
-        HERMES_RECEIVE_WAIT   = 4'b0100,
-        HERMES_RECEIVE_DATA   = 4'b1000
+    typedef enum logic [2:0] {  
+        HERMES_RECEIVE_HEADER = 3'b001,
+        HERMES_RECEIVE_WAIT   = 3'b010,
+        HERMES_RECEIVE_DATA   = 3'b100
     } hermes_receive_t;
 
     hermes_receive_t hermes_receive_state;
@@ -113,30 +113,13 @@ module DMA
         end
     end
 
-    logic [(HERMES_FLIT_SIZE - 1):0] hermes_payload_cntr;
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni) begin
-            hermes_payload_cntr <= '0;
-        end
-        else begin
-            if (hermes_receive_state == HERMES_RECEIVE_SIZE)
-                hermes_payload_cntr <= noc_data_i;
-            else if (can_receive && hermes_receive_state == HERMES_RECEIVE_DATA)
-                hermes_payload_cntr <= hermes_payload_cntr - 1'b1;
-        end
-    end
-
     hermes_receive_t hermes_receive_next_state;
     always_comb begin
         case (hermes_receive_state)
             HERMES_RECEIVE_HEADER:
                 hermes_receive_next_state = noc_rx_i 
-                    ? HERMES_RECEIVE_SIZE 
-                    : HERMES_RECEIVE_HEADER;
-            HERMES_RECEIVE_SIZE:
-                hermes_receive_next_state = noc_rx_i 
                     ? HERMES_RECEIVE_WAIT 
-                    : HERMES_RECEIVE_SIZE;
+                    : HERMES_RECEIVE_HEADER;
             HERMES_RECEIVE_WAIT:
                 hermes_receive_next_state = (
                     hermes_start_i 
@@ -146,7 +129,7 @@ module DMA
                     : HERMES_RECEIVE_WAIT;
             HERMES_RECEIVE_DATA: begin
                 if (can_receive) begin
-                    if (hermes_payload_cntr == 32'b1)
+                    if (noc_eop_i)
                         hermes_receive_next_state = HERMES_RECEIVE_HEADER;
                     else if (hermes_receive_size == 32'b1)
                         hermes_receive_next_state = HERMES_RECEIVE_WAIT;
@@ -175,7 +158,6 @@ module DMA
 
     assign hermes_receive_active_o = (hermes_receive_state == HERMES_RECEIVE_DATA);
     assign hermes_receive_available_o = (hermes_receive_state == HERMES_RECEIVE_WAIT);
-    assign hermes_receive_flits_available_o = hermes_payload_cntr;
 
 ////////////////////////////////////////////////////////////////////////////////
 // NoC Send FSM
@@ -311,7 +293,8 @@ module DMA
             hermes_send_state <= hermes_send_next_state;
     end
 
-    assign noc_tx_o = (hermes_send_state == HERMES_SEND_DATA || hermes_send_state == HERMES_SEND_STOP) && current_arbit == ARBIT_SEND;
+    assign noc_tx_o   = (hermes_send_state inside {HERMES_SEND_DATA, HERMES_SEND_STOP}) && current_arbit == ARBIT_SEND;
+    assign noc_eop_o  = (hermes_send_state == HERMES_SEND_STOP);
     assign noc_data_o = mem_data_i;
     assign hermes_send_active_o = (hermes_send_state != HERMES_SEND_IDLE);
 

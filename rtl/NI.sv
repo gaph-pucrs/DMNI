@@ -42,7 +42,6 @@ module NI
     input  logic                                         hermes_send_active_i,
     input  logic                                         hermes_receive_active_i,
     input  logic                                         hermes_receive_available_i,
-    input  logic              [(HERMES_FLIT_SIZE - 1):0] hermes_receive_flits_available_i,
     output logic                                         hermes_start_o,
     output hermes_op_t                                   hermes_operation_o,
     output logic                                  [31:0] hermes_size_o,
@@ -94,9 +93,6 @@ module NI
             DMNI_TASKS_PER_PE:           cfg_data = 32'(TASKS_PER_PE);
             DMNI_IMEM_PAGE_SZ:           cfg_data = 32'(IMEM_PAGE_SZ);
             DMNI_DMEM_PAGE_SZ:           cfg_data = 32'(DMEM_PAGE_SZ);
-
-            /* Hermes */
-            DMNI_HERMES_FLITS_AVAILABLE: cfg_data = {{(32 - HERMES_FLIT_SIZE){1'b0}}, hermes_receive_flits_available_i};
 
             /* BrLite Service */
             DMNI_BR_SVC_KSVC:            cfg_data = {{24{1'b0}}, br_svc_data_i.ksvc};

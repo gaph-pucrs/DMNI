@@ -49,11 +49,13 @@ module DMNI
 
     /* Hermes input interface */
     input  logic                                        noc_rx_i,
+    input  logic                                        noc_eop_i,
     output logic                                        noc_credit_o,
     input  logic        [(HERMES_FLIT_SIZE - 1):0]      noc_data_i,
 
     /* Hermes output interface */
     output logic                                        noc_tx_o,
+    output logic                                        noc_eop_o,
     input  logic                                        noc_credit_i,
     output logic        [(HERMES_FLIT_SIZE - 1):0]      noc_data_o,
 
@@ -75,22 +77,23 @@ module DMNI
 );
 
     logic                            hermes_buffer_tx;
+    logic                            hermes_buffer_eop;
     logic                            hermes_buffer_ack;
     logic [(HERMES_FLIT_SIZE - 1):0] hermes_buffer_data;
 
     RingBuffer #(
-        .DATA_SIZE   (HERMES_FLIT_SIZE  ),
+        .DATA_SIZE   (HERMES_FLIT_SIZE+1),
         .BUFFER_SIZE (HERMES_BUFFER_SIZE)
     )
     hermes_buffer (
-        .clk_i    (clk_i             ),
-        .rst_ni   (rst_ni            ),
-        .rx_i     (noc_rx_i          ),
-        .rx_ack_o (noc_credit_o      ),
-        .data_i   (noc_data_i        ),
-        .tx_o     (hermes_buffer_tx  ),
-        .tx_ack_i (hermes_buffer_ack ),
-        .data_o   (hermes_buffer_data)
+        .clk_i    (clk_i                                  ),
+        .rst_ni   (rst_ni                                 ),
+        .rx_i     (noc_rx_i                               ),
+        .rx_ack_o (noc_credit_o                           ),
+        .data_i   ({noc_eop_i, noc_data_i}                ),
+        .tx_o     (hermes_buffer_tx                       ),
+        .tx_ack_i (hermes_buffer_ack                      ),
+        .data_o   ({hermes_buffer_eop, hermes_buffer_data})
     );
 
     logic        br_mon_buffer_tx;
@@ -124,7 +127,6 @@ module DMNI
     logic       [31:0]                                  hermes_address;
     logic       [31:0]                                  hermes_address_2;
     logic       [31:0]                                  br_mon_task_clear;
-    logic       [(HERMES_FLIT_SIZE - 1):0]              hermes_receive_flits_available;
     logic       [($clog2(BRLITE_MON_NSVC) - 1):0][31:0] br_mon_ptrs;
 
     DMA #(
@@ -137,9 +139,11 @@ module DMNI
         .clk_i                            (clk_i                         ),
         .rst_ni                           (rst_ni                        ),
         .noc_rx_i                         (hermes_buffer_tx              ),
+        .noc_eop_i                        (hermes_buffer_eop             ),
         .noc_credit_o                     (hermes_buffer_ack             ),
         .noc_data_i                       (hermes_buffer_data            ),
         .noc_tx_o                         (noc_tx_o                      ),
+        .noc_eop_o                        (noc_eop_o                     ),
         .noc_ack_i                        (noc_credit_i                  ),
         .noc_data_o                       (noc_data_o                    ),
         .brlite_req_i                     (br_mon_buffer_tx              ),
@@ -161,8 +165,7 @@ module DMNI
         .hermes_send_active_o             (hermes_send_active            ),
         .hermes_receive_active_o          (hermes_receive_active         ),
         .hermes_receive_available_o       (hermes_receive_available      ),
-        .brlite_clear_ack_o               (br_mon_clear_ack              ),
-        .hermes_receive_flits_available_o (hermes_receive_flits_available)
+        .brlite_clear_ack_o               (br_mon_clear_ack              )
     );
 
     logic        br_svc_buffer_tx;
@@ -206,7 +209,6 @@ module DMNI
         .hermes_send_active_i             (hermes_send_active            ),
         .hermes_receive_active_i          (hermes_receive_active         ),
         .hermes_receive_available_i       (hermes_receive_available      ),
-        .hermes_receive_flits_available_i (hermes_receive_flits_available),
         .hermes_start_o                   (hermes_start                  ),          
         .hermes_operation_o               (hermes_operation              ),
         .hermes_size_o                    (hermes_size                   ),
