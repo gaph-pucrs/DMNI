@@ -43,6 +43,7 @@ module DMA
     input  brlite_mon_t                                        brlite_data_i,
 
     /* Memory interface */
+    output logic                                               mem_en_o,
     output logic [ 3:0]                                        mem_we_o,
     output logic [31:0]                                        mem_addr_o,
     input  logic [31:0]                                        mem_data_i,
@@ -589,11 +590,28 @@ module DMA
         endcase
     end
 
+
+    assign mem_we_o = (current_arbit == ARBIT_SEND) ? '0 : '1;
+
     always_comb begin
-        if (current_arbit == ARBIT_SEND || arbit_pending == '0)
-            mem_we_o = '0;
-        else
-            mem_we_o = {4{arbit_pending[current_arbit]}};
+        if (arbit_pending == '0) begin
+            mem_en_o = 1'b0;
+        end
+        else begin
+            case (current_arbit)
+                ARBIT_SEND:
+                    mem_en_o = arbit_pending[ARBIT_SEND];
+                ARBIT_RECEIVE:
+                    mem_en_o = (
+                        arbit_pending[ARBIT_RECEIVE] 
+                        && hermes_receive_addr != '0
+                    );
+                ARBIT_BR_LITE:
+                    mem_en_o = arbit_pending[ARBIT_BR_LITE];
+                default:
+                    mem_en_o = 1'b0;
+            endcase
+        end
     end
 
 endmodule

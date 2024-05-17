@@ -42,6 +42,7 @@ module DMNI
     output logic                                        release_peripheral_o,
 
     /* Memory interface */
+    output logic                                        mem_en_o,
     output logic        [ 3:0]                          mem_we_o,
     output logic        [31:0]                          mem_addr_o,
     input  logic        [31:0]                          mem_data_i,
@@ -149,6 +150,7 @@ module DMNI
         .brlite_req_i                     (br_mon_buffer_tx              ),
         .brlite_ack_o                     (br_mon_buffer_ack             ),
         .brlite_data_i                    (br_mon_buffer_data            ),
+        .mem_en_o                         (mem_en_o                      ),
         .mem_we_o                         (mem_we_o                      ),
         .mem_addr_o                       (mem_addr_o                    ),
         .mem_data_i                       (mem_data_i                    ),
