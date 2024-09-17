@@ -47,7 +47,7 @@ package DMNIPkg;
         DMNI_BR_SVC_PAYLOAD,
         DMNI_BR_MON_CLEAR,
         DMNI_BR_MON_PTR_QOS,
-        DMNI_BR_MON_PTR_PWR /* Number of MON_PTR addresses should match BRLITE_MON_NSVC */
+        DMNI_BR_MON_PTR_SEC /* Number of MON_PTR addresses should match BRLITE_MON_NSVC */
     } dmni_mmr_t;
 
     typedef enum {
@@ -57,7 +57,7 @@ package DMNIPkg;
 
     typedef enum {
         MONITOR_QOS,
-        MONITOR_PWR,
+        MONITOR_SEC,
         BRLITE_MON_NSVC
     } monitor_type_t;
 

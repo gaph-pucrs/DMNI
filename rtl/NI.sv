@@ -219,7 +219,7 @@ module NI
             if (cfg_en_i && cfg_we_i) begin
                 case (cfg_addr_i)
                     DMNI_BR_MON_PTR_QOS: br_mon_ptrs_o[MONITOR_QOS] <= cfg_data_i;
-                    DMNI_BR_MON_PTR_PWR: br_mon_ptrs_o[MONITOR_PWR] <= cfg_data_i;
+                    DMNI_BR_MON_PTR_SEC: br_mon_ptrs_o[MONITOR_SEC] <= cfg_data_i;
                     default: ;
                 endcase
             end
