@@ -27,6 +27,8 @@ module NI
     input  logic                                         clk_i,
     input  logic                                         rst_ni,
 
+    input  logic [31:0]                                  rcv_timestamp_i,
+
     /* CPU Interface */
     output logic                                         irq_o,
     input  logic                                         cfg_en_i,
@@ -97,6 +99,8 @@ module NI
             DMNI_BR_SVC_KSVC:            cfg_data = {{24{1'b0}}, br_svc_data_i.ksvc};
             DMNI_BR_SVC_PRODUCER:        cfg_data = {br_svc_data_i.seq_source, br_svc_data_i.producer};
             DMNI_BR_SVC_PAYLOAD:         cfg_data = br_svc_data_i.payload;
+
+            DMNI_RCV_TIMESTAMP:          cfg_data = rcv_timestamp_i;
 
             default:                     cfg_data = '0;
         endcase

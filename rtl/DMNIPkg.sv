@@ -16,7 +16,7 @@
 
 package DMNIPkg;
 
-    parameter DMNI_MMR_SIZE = 29;
+    parameter DMNI_MMR_SIZE = 30;
 
     typedef enum logic [($clog2(DMNI_MMR_SIZE) - 1):0] {
         DMNI_STATUS,
@@ -47,7 +47,8 @@ package DMNIPkg;
         DMNI_BR_SVC_PAYLOAD,
         DMNI_BR_MON_CLEAR,
         DMNI_BR_MON_PTR_QOS,
-        DMNI_BR_MON_PTR_SEC /* Number of MON_PTR addresses should match BRLITE_MON_NSVC */
+        DMNI_BR_MON_PTR_SEC, /* Number of MON_PTR addresses should match BRLITE_MON_NSVC */
+        DMNI_RCV_TIMESTAMP
     } dmni_mmr_t;
 
     typedef enum {

@@ -28,8 +28,10 @@ module DMNI
     parameter logic [15:0] ADDRESS            = 16'b0
 )
 (
-    input logic                                         clk_i,
-    input logic                                         rst_ni,
+    input  logic                                        clk_i,
+    input  logic                                        rst_ni,
+
+    input  logic        [31:0]                          tick_counter_i,
 
     /* CPU interface (MMR) */
     output logic                                        irq_o,
@@ -116,6 +118,7 @@ module DMNI
         .data_o   (br_mon_buffer_data)
     );
 
+    logic                                               hermes_buffer_eop_acked;
     logic                                               hermes_start;
     logic                                               hermes_send_active;
     logic                                               hermes_receive_active;
@@ -123,12 +126,16 @@ module DMNI
     logic                                               br_mon_clear;
     logic                                               br_mon_clear_ack;
     hermes_op_t                                         hermes_operation;
+    logic       [31:0]                                  rcv_timestamp;
     logic       [31:0]                                  hermes_size;
     logic       [31:0]                                  hermes_size_2;
     logic       [31:0]                                  hermes_address;
     logic       [31:0]                                  hermes_address_2;
     logic       [31:0]                                  br_mon_task_clear;
     logic       [($clog2(BRLITE_MON_NSVC) - 1):0][31:0] br_mon_ptrs;
+
+    /* @todo This can cause overwrite due to timestamping in buffer reception */
+    assign hermes_buffer_eop_acked = noc_rx_i && noc_credit_o && noc_eop_i;
 
     DMA #(
         .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),
@@ -139,6 +146,9 @@ module DMNI
     dma (
         .clk_i                            (clk_i                         ),
         .rst_ni                           (rst_ni                        ),
+        .tick_counter_i                   (tick_counter_i                ),
+        .buf_eop_acked_i                  (hermes_buffer_eop_acked      ),
+        .rcv_timestamp_o                  (rcv_timestamp                 ),
         .noc_rx_i                         (hermes_buffer_tx              ),
         .noc_eop_i                        (hermes_buffer_eop             ),
         .noc_credit_o                     (hermes_buffer_ack             ),
@@ -200,6 +210,7 @@ module DMNI
     ni (
         .clk_i                            (clk_i                         ),
         .rst_ni                           (rst_ni                        ),
+        .rcv_timestamp_i                  (rcv_timestamp                 ),
         .irq_o                            (irq_o                         ),
         .cfg_en_i                         (cfg_en_i                      ),
         .cfg_we_i                         (cfg_we_i                      ),
