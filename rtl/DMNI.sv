@@ -89,14 +89,15 @@ module DMNI
         .BUFFER_SIZE (HERMES_BUFFER_SIZE)
     )
     hermes_buffer (
-        .clk_i    (clk_i                                  ),
-        .rst_ni   (rst_ni                                 ),
-        .rx_i     (noc_rx_i                               ),
-        .rx_ack_o (noc_credit_o                           ),
-        .data_i   ({noc_eop_i, noc_data_i}                ),
-        .tx_o     (hermes_buffer_tx                       ),
-        .tx_ack_i (hermes_buffer_ack                      ),
-        .data_o   ({hermes_buffer_eop, hermes_buffer_data})
+        .clk_i     (clk_i                                  ),
+        .rst_ni    (rst_ni                                 ),
+        .buf_rst_ni(1'b0                                   ),
+        .rx_i      (noc_rx_i                               ),
+        .rx_ack_o  (noc_credit_o                           ),
+        .data_i    ({noc_eop_i, noc_data_i}                ),
+        .tx_o      (hermes_buffer_tx                       ),
+        .tx_ack_i  (hermes_buffer_ack                      ),
+        .data_o    ({hermes_buffer_eop, hermes_buffer_data})
     );
 
     logic        br_mon_buffer_tx;
