@@ -89,15 +89,15 @@ module DMNI
         .BUFFER_SIZE (HERMES_BUFFER_SIZE)
     )
     hermes_buffer (
-        .clk_i     (clk_i                                  ),
-        .rst_ni    (rst_ni                                 ),
-        .buf_rst_ni(1'b0                                   ),
-        .rx_i      (noc_rx_i                               ),
-        .rx_ack_o  (noc_credit_o                           ),
-        .data_i    ({noc_eop_i, noc_data_i}                ),
-        .tx_o      (hermes_buffer_tx                       ),
-        .tx_ack_i  (hermes_buffer_ack                      ),
-        .data_o    ({hermes_buffer_eop, hermes_buffer_data})
+        .clk_i    (clk_i                                  ),
+        .rst_ni   (rst_ni                                 ),
+        .buf_rst_i(1'b0                                   ),
+        .rx_i     (noc_rx_i                               ),
+        .rx_ack_o (noc_credit_o                           ),
+        .data_i   ({noc_eop_i, noc_data_i}                ),
+        .tx_o     (hermes_buffer_tx                       ),
+        .tx_ack_i (hermes_buffer_ack                      ),
+        .data_o   ({hermes_buffer_eop, hermes_buffer_data})
     );
 
     logic        br_mon_buffer_tx;
@@ -111,6 +111,7 @@ module DMNI
     br_mon_buffer (
         .clk_i    (clk_i             ),
         .rst_ni   (rst_ni            ),
+        .buf_rst_i(1'b0              ),
         .rx_i     (br_req_mon_i      ),
         .rx_ack_o (br_ack_mon_o      ),
         .data_i   (br_mon_data_i     ),
@@ -192,6 +193,7 @@ module DMNI
     br_svc_buffer (
         .clk_i    (clk_i             ),
         .rst_ni   (rst_ni            ),
+        .buf_rst_i(1'b0              ),
         .rx_i     (br_req_svc_i      ),
         .rx_ack_o (br_ack_svc_o      ),
         .data_i   (br_svc_data_i     ),
