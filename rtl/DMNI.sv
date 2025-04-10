@@ -120,6 +120,7 @@ module DMNI
         .data_o   (br_mon_buffer_data)
     );
 
+    logic                                               dmni_buffer_eop_acked;
     logic                                               hermes_buffer_eop_acked;
     logic                                               hermes_start;
     logic                                               hermes_send_active;
@@ -136,8 +137,8 @@ module DMNI
     logic       [31:0]                                  br_mon_task_clear;
     logic       [($clog2(BRLITE_MON_NSVC) - 1):0][31:0] br_mon_ptrs;
 
-    /* @todo This can cause overwrite due to timestamping in buffer reception */
-    assign hermes_buffer_eop_acked = noc_rx_i && noc_credit_o && noc_eop_i;
+    assign hermes_buffer_eop_acked = noc_rx_i         && noc_credit_o      && noc_eop_i;
+    assign dmni_buffer_eop_acked   = hermes_buffer_tx && hermes_buffer_ack && hermes_buffer_eop;
 
     DMA #(
         .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),
@@ -149,7 +150,8 @@ module DMNI
         .clk_i                            (clk_i                         ),
         .rst_ni                           (rst_ni                        ),
         .tick_counter_i                   (tick_counter_i                ),
-        .buf_eop_acked_i                  (hermes_buffer_eop_acked      ),
+        .buf_eop_acked_i                  (hermes_buffer_eop_acked       ),
+        .dmni_eop_acked_i                 (dmni_buffer_eop_acked         ),
         .rcv_timestamp_o                  (rcv_timestamp                 ),
         .noc_rx_i                         (hermes_buffer_tx              ),
         .noc_eop_i                        (hermes_buffer_eop             ),
