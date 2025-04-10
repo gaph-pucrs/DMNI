@@ -25,12 +25,6 @@ module DMA
     input  logic                                               clk_i,
     input  logic                                               rst_ni,
 
-    input  logic [31:0]                                        tick_counter_i,
-
-    input  logic                                               buf_eop_acked_i,
-    input  logic                                               dmni_eop_acked_i,
-    output logic [31:0]                                        rcv_timestamp_o,
-
     /* Hermes input interface (RECEIVE) */
     input  logic                                               noc_rx_i,
     input  logic                                               noc_eop_i,
@@ -157,21 +151,6 @@ module DMA
             hermes_receive_state <= HERMES_RECEIVE_HEADER;
         else 
             hermes_receive_state <= hermes_receive_next_state;
-    end
-
-    logic [31:0] rcv_timestamp;
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni)
-            rcv_timestamp <= '0;
-        else if (buf_eop_acked_i)
-            rcv_timestamp <= tick_counter_i;
-    end
-
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni)
-            rcv_timestamp_o <= '0;
-        else if (dmni_eop_acked_i)
-            rcv_timestamp_o <= rcv_timestamp;
     end
 
     assign noc_credit_o = (hermes_receive_state == HERMES_RECEIVE_DATA) 

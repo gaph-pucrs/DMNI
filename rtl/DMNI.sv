@@ -140,6 +140,27 @@ module DMNI
     assign hermes_buffer_eop_acked = noc_rx_i         && noc_credit_o      && noc_eop_i;
     assign dmni_buffer_eop_acked   = hermes_buffer_tx && hermes_buffer_ack && hermes_buffer_eop;
 
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic timestamp_ack;
+    logic timestamp_tx;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    RingBuffer #(
+        .DATA_SIZE   (32                                                 ),
+        .BUFFER_SIZE (2 > HERMES_BUFFER_SIZE/4 ? 2 : HERMES_BUFFER_SIZE/4)
+    )
+    timestamp_buffer (
+        .clk_i    (clk_i                  ),
+        .rst_ni   (rst_ni                 ),
+        .buf_rst_i(1'b0                   ),
+        .rx_i     (hermes_buffer_eop_acked),
+        .rx_ack_o (timestamp_ack          ),
+        .data_i   (tick_counter_i         ),
+        .tx_o     (timestamp_tx           ),
+        .tx_ack_i (dmni_buffer_eop_acked  ),
+        .data_o   (rcv_timestamp          )
+    );
+
     DMA #(
         .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),
         .N_PE_X           (N_PE_X          ),
@@ -149,10 +170,6 @@ module DMNI
     dma (
         .clk_i                            (clk_i                         ),
         .rst_ni                           (rst_ni                        ),
-        .tick_counter_i                   (tick_counter_i                ),
-        .buf_eop_acked_i                  (hermes_buffer_eop_acked       ),
-        .dmni_eop_acked_i                 (dmni_buffer_eop_acked         ),
-        .rcv_timestamp_o                  (rcv_timestamp                 ),
         .noc_rx_i                         (hermes_buffer_tx              ),
         .noc_eop_i                        (hermes_buffer_eop             ),
         .noc_credit_o                     (hermes_buffer_ack             ),
@@ -215,6 +232,7 @@ module DMNI
     ni (
         .clk_i                            (clk_i                         ),
         .rst_ni                           (rst_ni                        ),
+        .dmni_buffer_eop_acked_i          (dmni_buffer_eop_acked         ),
         .rcv_timestamp_i                  (rcv_timestamp                 ),
         .irq_o                            (irq_o                         ),
         .cfg_en_i                         (cfg_en_i                      ),

@@ -27,6 +27,7 @@ module NI
     input  logic                                         clk_i,
     input  logic                                         rst_ni,
 
+    input  logic                                         dmni_buffer_eop_acked_i,
     input  logic [31:0]                                  rcv_timestamp_i,
 
     /* CPU Interface */
@@ -68,6 +69,14 @@ module NI
     output brlite_out_t                                  br_data_o
 );
 
+    logic [31:0] rcv_timestamp;
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            rcv_timestamp <= '0;
+        else if(dmni_buffer_eop_acked_i)
+            rcv_timestamp <= rcv_timestamp_i;
+    end
+
 ////////////////////////////////////////////////////////////////////////////////
 //  IRQ Control
 ////////////////////////////////////////////////////////////////////////////////
@@ -100,7 +109,7 @@ module NI
             DMNI_BR_SVC_PRODUCER:        cfg_data = {br_svc_data_i.seq_source, br_svc_data_i.producer};
             DMNI_BR_SVC_PAYLOAD:         cfg_data = br_svc_data_i.payload;
 
-            DMNI_RCV_TIMESTAMP:          cfg_data = rcv_timestamp_i;
+            DMNI_RCV_TIMESTAMP:          cfg_data = rcv_timestamp;
 
             default:                     cfg_data = '0;
         endcase
