@@ -44,30 +44,28 @@ module NI
     input  logic                                         hermes_send_active_i,
     input  logic                                         hermes_receive_active_i,
     input  logic                                         hermes_receive_available_i,
-    output logic                                         hermes_start_o,
-    output hermes_op_t                                   hermes_operation_o,
+    output logic                                         hermes_st_rcv_o,
+    output logic                                         hermes_st_snd_o,
     output logic                                  [31:0] hermes_size_o,
     output logic                                  [31:0] hermes_size_2_o,
     output logic                                  [31:0] hermes_address_o,
     output logic                                  [31:0] hermes_address_2_o,
 
-    /* BrLite Monitor */
-    output logic                                         br_mon_clear_o,
-    input  logic                                         br_mon_clear_ack_i,
-    output logic [31:0]                                  br_mon_task_clear_o,
-    output logic [($clog2(BRLITE_MON_NSVC) - 1):0][31:0] br_mon_ptrs_o,
-
     /* BrLite Service */
-    input  logic                                         br_svc_rx_i,
-    output logic                                         br_svc_ack_o,
-    input  brlite_svc_t                                  br_svc_data_i,
+    input  logic                                         br_rx_i,
+    output logic                                         br_ack_o,
+    input  br_payload_t                                  br_data_i,
 
     /* BrLite Output  */
     input  logic                                         br_local_busy_i,
     output logic                                         br_req_o,
     input  logic                                         br_ack_i,
-    output brlite_out_t                                  br_data_o
+    output br_payload_t                                  br_data_o
 );
+
+////////////////////////////////////////////////////////////////////////////////
+//  Monitoring queue
+////////////////////////////////////////////////////////////////////////////////
 
     logic [31:0] rcv_timestamp;
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -83,7 +81,7 @@ module NI
 
     logic pending_svc;
 
-    assign irq_o = (pending_svc || br_svc_rx_i || hermes_receive_available_i);
+    assign irq_o = (pending_svc || br_rx_i || hermes_receive_available_i);
 
 ////////////////////////////////////////////////////////////////////////////////
 //  MMR Read
@@ -94,24 +92,29 @@ module NI
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
-            DMNI_STATUS:                 cfg_data = {{27{1'b0}}, release_peripheral_o, br_mon_clear_o, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
-            DMNI_IRQ_STATUS:             cfg_data = {{29{1'b0}}, pending_svc, br_svc_rx_i, hermes_receive_available_i};
+            DMNI_STATUS:           cfg_data = {{27{1'b0}}, release_peripheral_o, 1'b0, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
+            DMNI_IRQ:              cfg_data = {{29{1'b0}}, pending_svc, br_rx_i, hermes_receive_available_i};
 
             /* Software config */
-            DMNI_ADDRESS:                cfg_data = {16'b0, ADDRESS};
-            DMNI_MANYCORE_SIZE:          cfg_data = {7'b0, N_PE_X[8:0], 7'b0, N_PE_Y[8:0]};
-            DMNI_TASKS_PER_PE:           cfg_data = 32'(TASKS_PER_PE);
-            DMNI_IMEM_PAGE_SZ:           cfg_data = 32'(IMEM_PAGE_SZ);
-            DMNI_DMEM_PAGE_SZ:           cfg_data = 32'(DMEM_PAGE_SZ);
+            DMNI_ADDRESS:          cfg_data = {16'b0, ADDRESS};
+            DMNI_MANYCORE_SZ:      cfg_data = {16'(TASKS_PER_PE), 8'(N_PE_X), 8'(N_PE_Y)};
+            DMNI_IMEM_PAGE_SZ:     cfg_data = 32'(IMEM_PAGE_SZ);
+            DMNI_DMEM_PAGE_SZ:     cfg_data = 32'(DMEM_PAGE_SZ);
+
+            /* Hermes */
+            DMNI_HERMES_SIZE:      cfg_data = hermes_size_o;
+            DMNI_HERMES_SIZE_2:    cfg_data = hermes_size_2_o;
+            DMNI_HERMES_ADDRESS:   cfg_data = hermes_size_o;
+            DMNI_HERMES_ADDRESS_2: cfg_data = hermes_size_2_o;
 
             /* BrLite Service */
-            DMNI_BR_SVC_KSVC:            cfg_data = {{24{1'b0}}, br_svc_data_i.ksvc};
-            DMNI_BR_SVC_PRODUCER:        cfg_data = {br_svc_data_i.seq_source, br_svc_data_i.producer};
-            DMNI_BR_SVC_PAYLOAD:         cfg_data = br_svc_data_i.payload;
+            DMNI_BR_KSVC:          cfg_data = {24'b0, 1'b1, 3'b0, br_data_i.ksvc};
+            DMNI_BR_PAYLOAD:       cfg_data = {br_data_i.seq_source, br_data_i.payload};
 
-            DMNI_RCV_TIMESTAMP:          cfg_data = rcv_timestamp;
+            /* Monitoring */
+            DMNI_RCV_TIMESTAMP:    cfg_data = rcv_timestamp;
 
-            default:                     cfg_data = '0;
+            default:               cfg_data = '0;
         endcase
     end
 
@@ -125,15 +128,15 @@ module NI
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             pending_svc <= 1'b0;
-        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_PENDING_SVC)
-            pending_svc <= cfg_data_i[0];
+        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_IRQ)
+            pending_svc <= cfg_data_i[2];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             release_peripheral_o <= 1'b0;
-        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_RELEASE_PERIPHERAL)
-            release_peripheral_o <= cfg_data_i[0];
+        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_STATUS)
+            release_peripheral_o <= cfg_data_i[4];
     end
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -142,8 +145,8 @@ module NI
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
-            hermes_start_o     <= '0;
-            hermes_operation_o <= HERMES_OPERATION_SEND;
+            hermes_st_rcv_o    <= 1'b0;
+            hermes_st_snd_o    <= 1'b0;
             hermes_address_o   <= '0;
             hermes_address_2_o <= '0;
             hermes_size_o      <= '0;
@@ -152,8 +155,10 @@ module NI
         else begin
             if (cfg_en_i && cfg_we_i) begin
                 case (cfg_addr_i)
-                    DMNI_HERMES_START:     hermes_start_o     <= cfg_data_i[0];
-                    DMNI_HERMES_OPERATION: hermes_operation_o <= hermes_op_t'(cfg_data_i[0]);
+                    DMNI_STATUS: begin
+                        hermes_st_snd_o  <= cfg_data_i[0];
+                        hermes_st_rcv_o  <= cfg_data_i[1];
+                    end
                     DMNI_HERMES_SIZE:      hermes_size_o      <= cfg_data_i;
                     DMNI_HERMES_SIZE_2:    hermes_size_2_o    <= cfg_data_i;
                     DMNI_HERMES_ADDRESS:   hermes_address_o   <= cfg_data_i;
@@ -162,8 +167,11 @@ module NI
                 endcase
             end
 
-            if (hermes_start_o)
-                hermes_start_o <= '0;
+            if (hermes_st_rcv_o)
+                hermes_st_rcv_o <= 1'b0;
+
+            if (hermes_st_snd_o)
+                hermes_st_snd_o <= 1'b0;
         end
     end
 
@@ -179,8 +187,8 @@ module NI
         else begin
             if (br_ack_i)
                 br_req_o <= 1'b0;
-            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_START)
-                br_req_o <= cfg_data_i[0];
+            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_PAYLOAD)
+                br_req_o <= 1'b1;
         end
     end
 
@@ -192,11 +200,8 @@ module NI
         else begin
             if (cfg_en_i && cfg_we_i) begin
                 case (cfg_addr_i)
-                    DMNI_BR_SERVICE:  br_data_o.service    <= cfg_data_i[1:0];
-                    DMNI_BR_KSVC:     br_data_o.ksvc       <= cfg_data_i[7:0];
-                    DMNI_BR_TARGET:   br_data_o.seq_target <= cfg_data_i[15:0];
-                    DMNI_BR_PRODUCER: br_data_o.producer   <= cfg_data_i[15:0];
-                    DMNI_BR_PAYLOAD:  br_data_o.payload    <= cfg_data_i[31:0];
+                    DMNI_BR_KSVC:    br_data_o.ksvc    <= cfg_data_i[3:0];
+                    DMNI_BR_PAYLOAD: br_data_o.payload <= cfg_data_i[15:0];
                     default: ;
                 endcase
             end
@@ -210,49 +215,13 @@ module NI
     /* BrLite receive control */
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
-            br_svc_ack_o <= 1'b0;
+            br_ack_o <= 1'b0;
         end
         else begin
-            if (br_svc_ack_o)
-                br_svc_ack_o <= 1'b0;
-            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_SVC_POP)
-                br_svc_ack_o <= cfg_data_i[0];
-        end
-    end
-
-////////////////////////////////////////////////////////////////////////////////
-//  BrLite Monitor pointer control
-////////////////////////////////////////////////////////////////////////////////
-
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni) begin
-            br_mon_ptrs_o <= '0;
-        end
-        else begin
-            if (cfg_en_i && cfg_we_i) begin
-                case (cfg_addr_i)
-                    DMNI_BR_MON_PTR_QOS: br_mon_ptrs_o[MONITOR_QOS] <= cfg_data_i;
-                    DMNI_BR_MON_PTR_SEC: br_mon_ptrs_o[MONITOR_SEC] <= cfg_data_i;
-                    default: ;
-                endcase
-            end
-        end
-    end
-
-    /* Clear control */
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni) begin
-            br_mon_clear_o       <= '0;
-            br_mon_task_clear_o <= '0;
-        end
-        else begin
-            if (br_mon_clear_ack_i) begin
-                br_mon_clear_o <= 1'b0;
-            end
-            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_MON_CLEAR) begin
-                br_mon_clear_o       <= 1'b1;
-                br_mon_task_clear_o <= cfg_data_i;
-            end
+            if (br_ack_o)
+                br_ack_o <= 1'b0;
+            else if (cfg_en_i && !cfg_we_i && cfg_addr_i == DMNI_BR_PAYLOAD)
+                br_ack_o <= 1'b1;
         end
     end
 

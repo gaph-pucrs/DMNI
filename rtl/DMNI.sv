@@ -18,8 +18,7 @@ module DMNI
 #(
     parameter              HERMES_FLIT_SIZE   = 32,
     parameter              HERMES_BUFFER_SIZE = 16,
-    parameter              BR_MON_BUFFER_SIZE = 8,
-    parameter              BR_SVC_BUFFER_SIZE = 4,
+    parameter              BR_BUFFER_SIZE     = 4,
     parameter              N_PE_X             = 2,
     parameter              N_PE_Y             = 2,
     parameter              TASKS_PER_PE       = 1,
@@ -62,21 +61,16 @@ module DMNI
     input  logic                                        noc_credit_i,
     output logic        [(HERMES_FLIT_SIZE - 1):0]      noc_data_o,
 
-    /* BrLite Monitor interface */
-    input  logic                                        br_req_mon_i,
-    output logic                                        br_ack_mon_o,
-    input  brlite_mon_t                                 br_mon_data_i,
-
     /* BrLite Service interface */
-    input  logic                                        br_req_svc_i,
-    output logic                                        br_ack_svc_o,
-    input  brlite_svc_t                                 br_svc_data_i,
+    input  logic                                        br_req_i,
+    output logic                                        br_ack_o,
+    input  br_payload_t                                 br_data_i,
 
     /* BrLite Output interface */
     input  logic                                        br_local_busy_i,
     output logic                                        br_req_o,
     input  logic                                        br_ack_i,
-    output brlite_out_t                                 br_data_o
+    output br_payload_t                                 br_data_o
 );
 
     logic                            hermes_buffer_tx;
@@ -100,42 +94,18 @@ module DMNI
         .data_o   ({hermes_buffer_eop, hermes_buffer_data})
     );
 
-    logic        br_mon_buffer_tx;
-    logic        br_mon_buffer_ack;
-    brlite_mon_t br_mon_buffer_data;
-
-    RingBuffer #(
-        .DATA_SIZE   ($bits(brlite_mon_t)),
-        .BUFFER_SIZE (BR_MON_BUFFER_SIZE )
-    )
-    br_mon_buffer (
-        .clk_i    (clk_i             ),
-        .rst_ni   (rst_ni            ),
-        .buf_rst_i(1'b0              ),
-        .rx_i     (br_req_mon_i      ),
-        .rx_ack_o (br_ack_mon_o      ),
-        .data_i   (br_mon_data_i     ),
-        .tx_o     (br_mon_buffer_tx  ),
-        .tx_ack_i (br_mon_buffer_ack ),
-        .data_o   (br_mon_buffer_data)
-    );
-
     logic                                               dmni_buffer_eop_acked;
     logic                                               hermes_buffer_eop_acked;
-    logic                                               hermes_start;
     logic                                               hermes_send_active;
     logic                                               hermes_receive_active;
     logic                                               hermes_receive_available;
-    logic                                               br_mon_clear;
-    logic                                               br_mon_clear_ack;
-    hermes_op_t                                         hermes_operation;
+    logic                                               hermes_st_rcv;
+    logic                                               hermes_st_snd;
     logic       [31:0]                                  rcv_timestamp;
     logic       [31:0]                                  hermes_size;
     logic       [31:0]                                  hermes_size_2;
     logic       [31:0]                                  hermes_address;
     logic       [31:0]                                  hermes_address_2;
-    logic       [31:0]                                  br_mon_task_clear;
-    logic       [($clog2(BRLITE_MON_NSVC) - 1):0][31:0] br_mon_ptrs;
 
     assign hermes_buffer_eop_acked = noc_rx_i         && noc_credit_o      && noc_eop_i;
     assign dmni_buffer_eop_acked   = hermes_buffer_tx && hermes_buffer_ack && hermes_buffer_eop;
@@ -146,8 +116,8 @@ module DMNI
     /* verilator lint_on UNUSEDSIGNAL */
 
     RingBuffer #(
-        .DATA_SIZE   (32                                                 ),
-        .BUFFER_SIZE (2 > HERMES_BUFFER_SIZE/4 ? 2 : HERMES_BUFFER_SIZE/4)
+        .DATA_SIZE   (32                                                  ),
+        .BUFFER_SIZE (HERMES_BUFFER_SIZE/4 < 2  ? 2 : HERMES_BUFFER_SIZE/4)
     )
     timestamp_buffer (
         .clk_i    (clk_i                  ),
@@ -162,10 +132,7 @@ module DMNI
     );
 
     DMA #(
-        .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),
-        .N_PE_X           (N_PE_X          ),
-        .N_PE_Y           (N_PE_Y          ),
-        .TASKS_PER_PE     (TASKS_PER_PE    )
+        .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE)
     )
     dma (
         .clk_i                            (clk_i                         ),
@@ -178,47 +145,40 @@ module DMNI
         .noc_eop_o                        (noc_eop_o                     ),
         .noc_ack_i                        (noc_credit_i                  ),
         .noc_data_o                       (noc_data_o                    ),
-        .brlite_req_i                     (br_mon_buffer_tx              ),
-        .brlite_ack_o                     (br_mon_buffer_ack             ),
-        .brlite_data_i                    (br_mon_buffer_data            ),
         .mem_en_o                         (mem_en_o                      ),
         .mem_we_o                         (mem_we_o                      ),
         .mem_addr_o                       (mem_addr_o                    ),
         .mem_data_i                       (mem_data_i                    ),
         .mem_data_o                       (mem_data_o                    ),
-        .hermes_start_i                   (hermes_start                  ),
-        .brlite_clear_i                   (br_mon_clear                  ),
-        .hermes_operation_i               (hermes_operation              ),
+        .hermes_st_rcv_i                  (hermes_st_rcv                 ),
+        .hermes_st_snd_i                  (hermes_st_snd                 ),
         .hermes_size_i                    (hermes_size                   ),
         .hermes_size_2_i                  (hermes_size_2                 ),
         .hermes_address_i                 (hermes_address                ),
         .hermes_address_2_i               (hermes_address_2              ),
-        .brlite_task_clear_i              (br_mon_task_clear             ),
-        .brlite_mon_ptrs_i                (br_mon_ptrs                   ),
         .hermes_send_active_o             (hermes_send_active            ),
         .hermes_receive_active_o          (hermes_receive_active         ),
-        .hermes_receive_available_o       (hermes_receive_available      ),
-        .brlite_clear_ack_o               (br_mon_clear_ack              )
+        .hermes_receive_available_o       (hermes_receive_available      )
     );
 
-    logic        br_svc_buffer_tx;
-    logic        br_svc_buffer_ack;
-    brlite_svc_t br_svc_buffer_data;
+    logic        br_buffer_tx;
+    logic        br_buffer_ack;
+    br_payload_t br_buffer_data;
 
     RingBuffer #(
-        .DATA_SIZE   ($bits(brlite_svc_t)),
-        .BUFFER_SIZE (BR_SVC_BUFFER_SIZE )
+        .DATA_SIZE   ($bits(br_payload_t)),
+        .BUFFER_SIZE (BR_BUFFER_SIZE     )
     )
     br_svc_buffer (
-        .clk_i    (clk_i             ),
-        .rst_ni   (rst_ni            ),
-        .buf_rst_i(1'b0              ),
-        .rx_i     (br_req_svc_i      ),
-        .rx_ack_o (br_ack_svc_o      ),
-        .data_i   (br_svc_data_i     ),
-        .tx_o     (br_svc_buffer_tx  ),
-        .tx_ack_i (br_svc_buffer_ack ),
-        .data_o   (br_svc_buffer_data)
+        .clk_i    (clk_i         ),
+        .rst_ni   (rst_ni        ),
+        .buf_rst_i(1'b0          ),
+        .rx_i     (br_req_i      ),
+        .rx_ack_o (br_ack_o      ),
+        .data_i   (br_data_i     ),
+        .tx_o     (br_buffer_tx  ),
+        .tx_ack_i (br_buffer_ack ),
+        .data_o   (br_buffer_data)
     );
 
     NI #(
@@ -244,19 +204,15 @@ module DMNI
         .hermes_send_active_i             (hermes_send_active            ),
         .hermes_receive_active_i          (hermes_receive_active         ),
         .hermes_receive_available_i       (hermes_receive_available      ),
-        .hermes_start_o                   (hermes_start                  ),          
-        .hermes_operation_o               (hermes_operation              ),
+        .hermes_st_rcv_o                  (hermes_st_rcv                 ),
+        .hermes_st_snd_o                  (hermes_st_snd                 ),
         .hermes_size_o                    (hermes_size                   ),
         .hermes_size_2_o                  (hermes_size_2                 ),
         .hermes_address_o                 (hermes_address                ),
         .hermes_address_2_o               (hermes_address_2              ),
-        .br_mon_clear_o                   (br_mon_clear                  ),
-        .br_mon_clear_ack_i               (br_mon_clear_ack              ),
-        .br_mon_task_clear_o              (br_mon_task_clear             ),
-        .br_mon_ptrs_o                    (br_mon_ptrs                   ),
-        .br_svc_rx_i                      (br_svc_buffer_tx              ),
-        .br_svc_ack_o                     (br_svc_buffer_ack             ),
-        .br_svc_data_i                    (br_svc_buffer_data            ),
+        .br_rx_i                          (br_buffer_tx                  ),
+        .br_ack_o                         (br_buffer_ack                 ),
+        .br_data_i                        (br_buffer_data                ),
         .br_local_busy_i                  (br_local_busy_i               ),
         .br_req_o                         (br_req_o                      ),
         .br_ack_i                         (br_ack_i                      ),
