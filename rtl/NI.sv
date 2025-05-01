@@ -33,7 +33,7 @@ module NI
     /* CPU Interface */
     output logic                                         irq_o,
     input  logic                                         cfg_en_i,
-    input  logic                                         cfg_we_i,
+    input  logic [3:0]                                   cfg_we_i,
     input  logic         [($clog2(DMNI_MMR_SIZE) - 1):0] cfg_addr_i,
     input  logic                                  [31:0] cfg_data_i,
     output logic                                  [31:0] cfg_data_o,
@@ -121,21 +121,21 @@ module NI
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             cfg_data_o <= '0;
-        else if (cfg_en_i && !cfg_we_i)
+        else if (cfg_en_i && (cfg_we_i == '0))
             cfg_data_o <= cfg_data;
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             pending_svc <= 1'b0;
-        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_IRQ)
+        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ)
             pending_svc <= cfg_data_i[2];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             release_peripheral_o <= 1'b0;
-        else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_STATUS)
+        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
             release_peripheral_o <= cfg_data_i[4];
     end
 
@@ -145,33 +145,55 @@ module NI
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
-            hermes_st_rcv_o    <= 1'b0;
-            hermes_st_snd_o    <= 1'b0;
+            hermes_st_snd_o <= 1'b0;
+        end
+        else begin
+            if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
+                hermes_st_snd_o <= cfg_data_i[0];
+
+            if (hermes_st_snd_o)
+                hermes_st_snd_o <= 1'b0; 
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            hermes_st_rcv_o <= 1'b0;
+        end
+        else begin 
+            if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
+                hermes_st_rcv_o <= cfg_data_i[1];
+            
+            if (hermes_st_rcv_o)
+                hermes_st_rcv_o <= 1'b0; 
+        end
+    end
+
+    logic [31:0] w_data;
+    always_comb begin
+        w_data[31:24] = cfg_we_i[3] ? cfg_data_i[31:24] : cfg_data[31:24];
+        w_data[23:16] = cfg_we_i[2] ? cfg_data_i[23:16] : cfg_data[23:16];
+        w_data[15: 8] = cfg_we_i[1] ? cfg_data_i[15: 8] : cfg_data[15: 8];
+        w_data[ 7: 0] = cfg_we_i[0] ? cfg_data_i[ 7: 0] : cfg_data[ 7: 0];
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
             hermes_address_o   <= '0;
             hermes_address_2_o <= '0;
             hermes_size_o      <= '0;
             hermes_size_2_o    <= '0;
         end
         else begin
-            if (cfg_en_i && cfg_we_i) begin
+            if (cfg_en_i && (cfg_we_i != '0)) begin
                 case (cfg_addr_i)
-                    DMNI_STATUS: begin
-                        hermes_st_snd_o  <= cfg_data_i[0];
-                        hermes_st_rcv_o  <= cfg_data_i[1];
-                    end
-                    DMNI_HERMES_SIZE:      hermes_size_o      <= cfg_data_i;
-                    DMNI_HERMES_SIZE_2:    hermes_size_2_o    <= cfg_data_i;
-                    DMNI_HERMES_ADDRESS:   hermes_address_o   <= cfg_data_i;
-                    DMNI_HERMES_ADDRESS_2: hermes_address_2_o <= cfg_data_i;
+                    DMNI_HERMES_SIZE:      hermes_size_o      <= w_data;
+                    DMNI_HERMES_SIZE_2:    hermes_size_2_o    <= w_data;
+                    DMNI_HERMES_ADDRESS:   hermes_address_o   <= w_data;
+                    DMNI_HERMES_ADDRESS_2: hermes_address_2_o <= w_data;
                     default: ;
                 endcase
             end
-
-            if (hermes_st_rcv_o)
-                hermes_st_rcv_o <= 1'b0;
-
-            if (hermes_st_snd_o)
-                hermes_st_snd_o <= 1'b0;
         end
     end
 
@@ -187,7 +209,7 @@ module NI
         else begin
             if (br_ack_i)
                 br_req_o <= 1'b0;
-            else if (cfg_en_i && cfg_we_i && cfg_addr_i == DMNI_BR_PAYLOAD)
+            else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_BR_KSVC)
                 br_req_o <= 1'b1;
         end
     end
@@ -197,13 +219,16 @@ module NI
         if (!rst_ni) begin
             br_data_o <= '0;
         end
-        else begin
-            if (cfg_en_i && cfg_we_i) begin
-                case (cfg_addr_i)
-                    DMNI_BR_KSVC:    br_data_o.ksvc    <= cfg_data_i[3:0];
-                    DMNI_BR_PAYLOAD: br_data_o.payload <= cfg_data_i[15:0];
-                    default: ;
-                endcase
+        else if (cfg_en_i) begin
+            if (cfg_addr_i == DMNI_BR_KSVC && cfg_we_i[0])
+                br_data_o.ksvc <= cfg_data_i[3:0];
+
+            if (cfg_addr_i == DMNI_BR_PAYLOAD) begin
+                if (cfg_we_i[0])
+                    br_data_o.payload[7:0] <= cfg_data_i[7:0];
+
+                if (cfg_we_i[1])
+                    br_data_o.payload[15:8] <= cfg_data_i[15:8];
             end
         end
     end
@@ -220,7 +245,7 @@ module NI
         else begin
             if (br_ack_o)
                 br_ack_o <= 1'b0;
-            else if (cfg_en_i && !cfg_we_i && cfg_addr_i == DMNI_BR_PAYLOAD)
+            else if (cfg_en_i && (cfg_we_i == '0) && cfg_addr_i == DMNI_BR_KSVC)
                 br_ack_o <= 1'b1;
         end
     end

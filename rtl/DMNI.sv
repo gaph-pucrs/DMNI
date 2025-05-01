@@ -35,7 +35,7 @@ module DMNI
     /* CPU interface (MMR) */
     output logic                                        irq_o,
     input  logic                                        cfg_en_i,
-    input  logic                                        cfg_we_i,
+    input  logic        [3:0]                           cfg_we_i,
     input  logic        [($clog2(DMNI_MMR_SIZE) - 1):0] cfg_addr_i,
     input  logic        [31:0]                          cfg_data_i,
     output logic        [31:0]                          cfg_data_o,
