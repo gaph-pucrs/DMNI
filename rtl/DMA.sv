@@ -19,38 +19,39 @@ module DMA
     parameter HERMES_FLIT_SIZE = 32
 )
 (
-    input  logic                                               clk_i,
-    input  logic                                               rst_ni,
+    input  logic                            clk_i,
+    input  logic                            rst_ni,
 
     /* Hermes input interface (RECEIVE) */
-    input  logic                                               noc_rx_i,
-    input  logic                                               noc_eop_i,
-    output logic                                               noc_credit_o,
-    input  logic [(HERMES_FLIT_SIZE - 1):0]                    noc_data_i,
+    input  logic                            noc_rx_i,
+    input  logic                            noc_eop_i,
+    output logic                            noc_credit_o,
+    input  logic [(HERMES_FLIT_SIZE - 1):0] noc_data_i,
 
     /* Hermes output interface (SEND) */
-    output logic                                               noc_tx_o,
-    output logic                                               noc_eop_o,
-    input  logic                                               noc_ack_i,
-    output logic [(HERMES_FLIT_SIZE - 1):0]                    noc_data_o,
+    output logic                            noc_tx_o,
+    output logic                            noc_eop_o,
+    input  logic                            noc_ack_i,
+    output logic [(HERMES_FLIT_SIZE - 1):0] noc_data_o,
 
     /* Memory interface */
-    output logic                                               mem_en_o,
-    output logic [ 3:0]                                        mem_we_o,
-    output logic [31:0]                                        mem_addr_o,
-    input  logic [31:0]                                        mem_data_i,
-    output logic [31:0]                                        mem_data_o,
+    output logic                            mem_en_o,
+    output logic                     [ 3:0] mem_we_o,
+    output logic                     [31:0] mem_addr_o,
+    input  logic                     [31:0] mem_data_i,
+    output logic                     [31:0] mem_data_o,
 
     /* Configuration interface */
-    input  logic                                               hermes_st_rcv_i,
-    input  logic                                               hermes_st_snd_i,
-    input  logic       [31:0]                                  hermes_size_i,
-    input  logic       [31:0]                                  hermes_size_2_i,
-    input  logic       [31:0]                                  hermes_address_i,
-    input  logic       [31:0]                                  hermes_address_2_i,
-    output logic                                               hermes_send_active_o,
-    output logic                                               hermes_receive_active_o,
-    output logic                                               hermes_receive_available_o
+    input  logic                            hermes_st_rcv_i,
+    input  logic                            hermes_st_snd_i,
+    input  logic                     [31:0] hermes_size_i,
+    input  logic                     [31:0] hermes_size_2_i,
+    input  logic                     [31:0] hermes_address_i,
+    input  logic                     [31:0] hermes_address_2_i,
+    output logic                     [31:0] hermes_received_cnt_o,
+    output logic                            hermes_send_active_o,
+    output logic                            hermes_receive_active_o,
+    output logic                            hermes_receive_available_o
 );
 
     typedef enum {
@@ -135,9 +136,7 @@ module DMA
             hermes_receive_state <= hermes_receive_next_state;
     end
 
-    assign noc_credit_o = (hermes_receive_state == HERMES_RECEIVE_DATA) 
-        ? can_receive
-        : (hermes_receive_state != HERMES_RECEIVE_WAIT);
+    assign noc_credit_o = (hermes_receive_state == HERMES_RECEIVE_DATA) && can_receive;
 
     assign hermes_receive_active_o = (hermes_receive_state == HERMES_RECEIVE_DATA);
     assign hermes_receive_available_o = (hermes_receive_state == HERMES_RECEIVE_WAIT);
@@ -249,8 +248,8 @@ module DMA
                 end 
                 else begin
                     if (
-                        (hermes_send_size == 32'b1 && hermes_send_size_2 == '0)
-                        || (hermes_send_size == '0 && hermes_send_size_2 == 32'b1)
+                        (hermes_send_size == 32'b1 && hermes_send_size_2 == '0) ||
+                        (hermes_send_size == '0 && hermes_send_size_2 == 32'b1)
                     )
                         hermes_send_next_state = HERMES_SEND_STOP;
                     else
@@ -360,5 +359,21 @@ module DMA
 
     assign mem_data_o = noc_data_i;
     assign mem_we_o = (current_arbit == ARBIT_SEND) ? '0 : '1;
+
+////////////////////////////////////////////////////////////////////////////////
+// Reporting
+////////////////////////////////////////////////////////////////////////////////
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            hermes_received_cnt_o <= '0;
+        end
+        else begin
+            if (hermes_st_rcv_i)
+                hermes_received_cnt_o <= '0;
+            else if (hermes_receive_state == HERMES_RECEIVE_DATA && can_receive)
+                hermes_received_cnt_o <= hermes_received_cnt_o + HERMES_FLIT_SIZE/8;
+        end
+    end
 
 endmodule

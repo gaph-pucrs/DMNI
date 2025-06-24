@@ -24,43 +24,45 @@ module NI
     parameter logic [15:0] ADDRESS          = 16'b0
 )
 (
-    input  logic                                         clk_i,
-    input  logic                                         rst_ni,
+    input  logic               clk_i,
+    input  logic               rst_ni,
 
-    input  logic                                         dmni_buffer_eop_acked_i,
-    input  logic [31:0]                                  rcv_timestamp_i,
+    input  logic               dmni_buffer_eop_acked_i,
+    input  logic        [31:0] rcv_timestamp_i,
 
     /* CPU Interface */
-    output logic                                         irq_o,
-    input  logic                                         cfg_en_i,
-    input  logic [3:0]                                   cfg_we_i,
-    input  logic         [($clog2(DMNI_MMR_SIZE) - 1):0] cfg_addr_i,
-    input  logic                                  [31:0] cfg_data_i,
-    output logic                                  [31:0] cfg_data_o,
+    output logic               irq_o,
+    input  logic               cfg_en_i,
+    input  logic         [3:0] cfg_we_i,
+    input  logic         [7:0] cfg_addr_i,
+    input  logic        [31:0] cfg_data_i,
+    output logic        [31:0] cfg_data_o,
 
-    output logic                                         release_peripheral_o,
+    output logic               release_peripheral_o,
 
     /* Hermes MMRs */
-    input  logic                                         hermes_send_active_i,
-    input  logic                                         hermes_receive_active_i,
-    input  logic                                         hermes_receive_available_i,
-    output logic                                         hermes_st_rcv_o,
-    output logic                                         hermes_st_snd_o,
-    output logic                                  [31:0] hermes_size_o,
-    output logic                                  [31:0] hermes_size_2_o,
-    output logic                                  [31:0] hermes_address_o,
-    output logic                                  [31:0] hermes_address_2_o,
+    input  logic               hermes_send_active_i,
+    input  logic               hermes_receive_active_i,
+    input  logic               hermes_receive_available_i,
+    output logic               hermes_st_rcv_o,
+    output logic               hermes_st_snd_o,
+    input  logic        [31:0] hermes_data_i,
+    input  logic        [31:0] hermes_received_cnt_i,
+    output logic        [31:0] hermes_size_o,
+    output logic        [31:0] hermes_size_2_o,
+    output logic        [31:0] hermes_address_o,
+    output logic        [31:0] hermes_address_2_o,
 
     /* BrLite Service */
-    input  logic                                         br_rx_i,
-    output logic                                         br_ack_o,
-    input  br_payload_t                                  br_data_i,
+    input  logic               br_rx_i,
+    output logic               br_ack_o,
+    input  br_payload_t        br_data_i,
 
     /* BrLite Output  */
-    input  logic                                         br_local_busy_i,
-    output logic                                         br_req_o,
-    input  logic                                         br_ack_i,
-    output br_payload_t                                  br_data_o
+    input  logic               br_local_busy_i,
+    output logic               br_req_o,
+    input  logic               br_ack_i,
+    output br_payload_t        br_data_o
 );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -81,7 +83,7 @@ module NI
 
     logic pending_svc;
 
-    assign irq_o = (pending_svc || br_rx_i || hermes_receive_available_i);
+    assign irq_o = ((pending_svc && !hermes_send_active_i) || br_rx_i || hermes_receive_available_i);
 
 ////////////////////////////////////////////////////////////////////////////////
 //  MMR Read
@@ -106,6 +108,9 @@ module NI
             DMNI_HERMES_SIZE_2:    cfg_data = hermes_size_2_o;
             DMNI_HERMES_ADDRESS:   cfg_data = hermes_size_o;
             DMNI_HERMES_ADDRESS_2: cfg_data = hermes_size_2_o;
+
+            DMNI_HEAD:             cfg_data = hermes_data_i;
+            DMNI_RECD_CNT:         cfg_data = hermes_received_cnt_i;
 
             /* BrLite Service */
             DMNI_BR_KSVC:          cfg_data = {24'b0, 1'b1, 3'b0, br_data_i.ksvc};

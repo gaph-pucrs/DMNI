@@ -36,7 +36,7 @@ module DMNI
     output logic                                        irq_o,
     input  logic                                        cfg_en_i,
     input  logic        [3:0]                           cfg_we_i,
-    input  logic        [($clog2(DMNI_MMR_SIZE) - 1):0] cfg_addr_i,
+    input  logic        [7:0]                           cfg_addr_i,
     input  logic        [31:0]                          cfg_data_i,
     output logic        [31:0]                          cfg_data_o,
 
@@ -94,18 +94,19 @@ module DMNI
         .data_o   ({hermes_buffer_eop, hermes_buffer_data})
     );
 
-    logic                                               dmni_buffer_eop_acked;
-    logic                                               hermes_buffer_eop_acked;
-    logic                                               hermes_send_active;
-    logic                                               hermes_receive_active;
-    logic                                               hermes_receive_available;
-    logic                                               hermes_st_rcv;
-    logic                                               hermes_st_snd;
-    logic       [31:0]                                  rcv_timestamp;
-    logic       [31:0]                                  hermes_size;
-    logic       [31:0]                                  hermes_size_2;
-    logic       [31:0]                                  hermes_address;
-    logic       [31:0]                                  hermes_address_2;
+    logic              dmni_buffer_eop_acked;
+    logic              hermes_buffer_eop_acked;
+    logic              hermes_send_active;
+    logic              hermes_receive_active;
+    logic              hermes_receive_available;
+    logic              hermes_st_rcv;
+    logic              hermes_st_snd;
+    logic       [31:0] rcv_timestamp;
+    logic       [31:0] hermes_size;
+    logic       [31:0] hermes_size_2;
+    logic       [31:0] hermes_address;
+    logic       [31:0] hermes_address_2;
+    logic       [31:0] hermes_received_cnt;
 
     assign hermes_buffer_eop_acked = noc_rx_i         && noc_credit_o      && noc_eop_i;
     assign dmni_buffer_eop_acked   = hermes_buffer_tx && hermes_buffer_ack && hermes_buffer_eop;
@@ -156,6 +157,7 @@ module DMNI
         .hermes_size_2_i                  (hermes_size_2                 ),
         .hermes_address_i                 (hermes_address                ),
         .hermes_address_2_i               (hermes_address_2              ),
+        .hermes_received_cnt_o            (hermes_received_cnt           ),
         .hermes_send_active_o             (hermes_send_active            ),
         .hermes_receive_active_o          (hermes_receive_active         ),
         .hermes_receive_available_o       (hermes_receive_available      )
@@ -206,6 +208,8 @@ module DMNI
         .hermes_receive_available_i       (hermes_receive_available      ),
         .hermes_st_rcv_o                  (hermes_st_rcv                 ),
         .hermes_st_snd_o                  (hermes_st_snd                 ),
+        .hermes_data_i                    (hermes_buffer_data            ),
+        .hermes_received_cnt_i            (hermes_received_cnt           ),
         .hermes_size_o                    (hermes_size                   ),
         .hermes_size_2_o                  (hermes_size_2                 ),
         .hermes_address_o                 (hermes_address                ),

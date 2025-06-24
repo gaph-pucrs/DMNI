@@ -16,21 +16,26 @@
 
 package DMNIPkg;
 
-    parameter DMNI_MMR_SIZE = 13;
-    typedef enum logic [($clog2(DMNI_MMR_SIZE) - 1):0] {
-        DMNI_STATUS,
-        DMNI_IRQ,
-        DMNI_ADDRESS,
-        DMNI_MANYCORE_SZ,
-        DMNI_IMEM_PAGE_SZ,
-        DMNI_DMEM_PAGE_SZ,
-        DMNI_HERMES_SIZE,
-        DMNI_HERMES_SIZE_2,
-        DMNI_HERMES_ADDRESS,
-        DMNI_HERMES_ADDRESS_2,
-        DMNI_BR_KSVC,
-        DMNI_BR_PAYLOAD,
-        DMNI_RCV_TIMESTAMP
+    typedef enum logic [7:0] {
+        DMNI_STATUS             = 8'h00,
+        DMNI_IRQ                = 8'h04,
+
+        DMNI_ADDRESS            = 8'h10,
+        DMNI_MANYCORE_SZ        = 8'h14,
+        DMNI_IMEM_PAGE_SZ       = 8'h18,
+        DMNI_DMEM_PAGE_SZ       = 8'h1C,
+
+        DMNI_HEAD               = 8'h20,
+        DMNI_RECD_CNT           = 8'h24,
+        DMNI_RCV_TIMESTAMP      = 8'h28,
+
+        DMNI_HERMES_SIZE        = 8'h30,
+        DMNI_HERMES_SIZE_2      = 8'h34,
+        DMNI_HERMES_ADDRESS     = 8'h38,
+        DMNI_HERMES_ADDRESS_2   = 8'h3C,
+
+        DMNI_BR_KSVC            = 8'h40,
+        DMNI_BR_PAYLOAD         = 8'h44
     } dmni_mmr_t;
 
     typedef struct packed {
