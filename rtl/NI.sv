@@ -94,11 +94,11 @@ module NI
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
-            DMNI_STATUS:           cfg_data = {{27{1'b0}}, release_peripheral_o, 1'b0, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i};
-            DMNI_IRQ:              cfg_data = {{29{1'b0}}, pending_svc, br_rx_i, hermes_receive_available_i};
+            DMNI_STATUS:           cfg_data = {24'h000000, 1'b0, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i, release_peripheral_o, 1'b0, 1'b0, 1'b0};
+            DMNI_IRQ:              cfg_data = {28'h0000000, pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
 
             /* Software config */
-            DMNI_ADDRESS:          cfg_data = {16'b0, ADDRESS};
+            DMNI_ADDRESS:          cfg_data = {16'h0000, ADDRESS};
             DMNI_MANYCORE_SZ:      cfg_data = {16'(TASKS_PER_PE), 8'(N_PE_X), 8'(N_PE_Y)};
             DMNI_IMEM_PAGE_SZ:     cfg_data = 32'(IMEM_PAGE_SZ);
             DMNI_DMEM_PAGE_SZ:     cfg_data = 32'(DMEM_PAGE_SZ);
@@ -113,7 +113,7 @@ module NI
             DMNI_RECD_CNT:         cfg_data = hermes_received_cnt_i;
 
             /* BrLite Service */
-            DMNI_BR_KSVC:          cfg_data = {24'b0, 1'b1, 3'b0, br_data_i.ksvc};
+            DMNI_BR_KSVC:          cfg_data = {24'h000000, 1'b1, 3'b000, br_data_i.ksvc};
             DMNI_BR_PAYLOAD:       cfg_data = {br_data_i.seq_source, br_data_i.payload};
 
             /* Monitoring */
@@ -134,14 +134,14 @@ module NI
         if (!rst_ni)
             pending_svc <= 1'b0;
         else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ)
-            pending_svc <= cfg_data_i[2];
+            pending_svc <= cfg_data_i[3];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             release_peripheral_o <= 1'b0;
         else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
-            release_peripheral_o <= cfg_data_i[4];
+            release_peripheral_o <= cfg_data_i[3];
     end
 
 ////////////////////////////////////////////////////////////////////////////////
