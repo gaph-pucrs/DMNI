@@ -62,7 +62,17 @@ module NI
     input  logic               br_local_busy_i,
     output logic               br_req_o,
     input  logic               br_ack_i,
-    output br_payload_t        br_data_o
+    output br_payload_t        br_data_o,
+
+    /* Monitor interface */
+    input  logic        [ 7:0] mon_sem_oc_i,
+    input  logic               mon_active_i,
+    output logic               mon_reset_o,
+    output logic               mon_sem_av_post_o,
+    output logic               mon_sem_oc_wait_o,
+    output logic        [ 7:0] mon_sem_av_o,
+    output logic        [ 7:0] mon_size_o,
+    output logic        [31:0] mon_addr_o
 );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -94,7 +104,7 @@ module NI
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
-            DMNI_STATUS:           cfg_data = {24'h000000, 1'b0, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i, release_peripheral_o, 1'b0, 1'b0, 1'b0};
+            DMNI_STATUS:           cfg_data = {24'h000000, mon_active_i, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i, release_peripheral_o, 1'b0, 1'b0, 1'b0};
             DMNI_IRQ:              cfg_data = {28'h0000000, pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
 
             /* Software config */
@@ -118,6 +128,10 @@ module NI
 
             /* Monitoring */
             DMNI_RCV_TIMESTAMP:    cfg_data = rcv_timestamp;
+
+            DMNI_MON_BASE:         cfg_data = mon_addr_o;
+            DMNI_MON_LENGTH:       cfg_data = 32'(mon_size_o);
+            DMNI_MON_SEM_OC:       cfg_data = 32'(mon_sem_oc_i);
 
             default:               cfg_data = '0;
         endcase
@@ -252,6 +266,76 @@ module NI
                 br_ack_o <= 1'b0;
             else if (cfg_en_i && (cfg_we_i == '0) && cfg_addr_i == DMNI_BR_KSVC)
                 br_ack_o <= 1'b1;
+        end
+    end
+
+////////////////////////////////////////////////////////////////////////////////
+//  Monitoring control
+////////////////////////////////////////////////////////////////////////////////
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            mon_sem_av_post_o <= 1'b0;
+        end
+        else begin
+            mon_sem_av_post_o <= 1'b0;
+
+            if (cfg_addr_i == DMNI_MON_SEM_AV && cfg_we_i != '0) begin
+                if (w_data == 32'hFFFFFFFF)
+                    mon_sem_av_post_o <= 1'b1;
+                else
+                    mon_sem_av_o <= w_data[7:0];
+            end
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            mon_sem_oc_wait_o <= 1'b0;
+        end
+        else begin
+            mon_sem_oc_wait_o <= 1'b0;
+
+            if (cfg_addr_i == DMNI_MON_SEM_OC && cfg_we_i == '0 && mon_sem_oc_i != '0)
+                mon_sem_oc_wait_o <= 1'b1;
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            mon_size_o <= '0;
+        end
+        else begin
+            if (cfg_addr_i == DMNI_MON_LENGTH && cfg_we_i != '0)
+                mon_size_o <= w_data[7:0];
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            mon_addr_o <= '0;
+        end
+        else begin
+            if (cfg_addr_i == DMNI_MON_BASE && cfg_we_i != '0)
+                mon_addr_o <= w_data;
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            mon_reset_o <= 1'b0;
+        end
+        else begin
+            mon_reset_o <= 1'b0;
+
+            if (
+                (
+                    cfg_addr_i inside {DMNI_MON_LENGTH, DMNI_MON_BASE}
+                    || (cfg_addr_i == DMNI_MON_SEM_AV && w_data != 32'hFFFFFFFF)
+                )
+                && cfg_we_i != '0
+            )
+                mon_reset_o <= 1'b1;
         end
     end
 

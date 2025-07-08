@@ -132,6 +132,15 @@ module DMNI
         .data_o   (rcv_timestamp          )
     );
 
+    logic        hermes_monitor_reset;
+    logic        hermes_monitor_sem_av_post;
+    logic        hermes_monitor_sem_oc_wait;
+    logic        hermes_monitor_active;
+    logic [ 7:0] hermes_monitor_sem_av;
+    logic [ 7:0] hermes_monitor_sem_oc;
+    logic [ 7:0] hermes_monitor_size;
+    logic [31:0] hermes_monitor_addr;
+
     DMA #(
         .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE)
     )
@@ -160,7 +169,15 @@ module DMNI
         .hermes_received_cnt_o            (hermes_received_cnt           ),
         .hermes_send_active_o             (hermes_send_active            ),
         .hermes_receive_active_o          (hermes_receive_active         ),
-        .hermes_receive_available_o       (hermes_receive_available      )
+        .hermes_receive_available_o       (hermes_receive_available      ),
+        .hermes_monitor_reset_i           (hermes_monitor_reset          ),
+        .hermes_monitor_sem_av_post_i     (hermes_monitor_sem_av_post    ),
+        .hermes_monitor_sem_oc_wait_i     (hermes_monitor_sem_oc_wait    ),
+        .hermes_monitor_sem_av_i          (hermes_monitor_sem_av         ),
+        .hermes_monitor_size_i            (hermes_monitor_size           ),
+        .hermes_monitor_addr_i            (hermes_monitor_addr           ),
+        .hermes_monitor_sem_oc_o          (hermes_monitor_sem_oc         ),
+        .hermes_monitor_active_o          (hermes_monitor_active         )
     );
 
     logic        br_buffer_tx;
@@ -220,7 +237,15 @@ module DMNI
         .br_local_busy_i                  (br_local_busy_i               ),
         .br_req_o                         (br_req_o                      ),
         .br_ack_i                         (br_ack_i                      ),
-        .br_data_o                        (br_data_o                     )
+        .br_data_o                        (br_data_o                     ),
+        .mon_sem_oc_i                     (hermes_monitor_sem_oc         ),
+        .mon_active_i                     (hermes_monitor_active         ),
+        .mon_reset_o                      (hermes_monitor_reset          ),
+        .mon_sem_av_post_o                (hermes_monitor_sem_av_post    ),
+        .mon_sem_oc_wait_o                (hermes_monitor_sem_oc_wait    ),
+        .mon_sem_av_o                     (hermes_monitor_sem_av         ),
+        .mon_size_o                       (hermes_monitor_size           ),
+        .mon_addr_o                       (hermes_monitor_addr           )
     );
 
 endmodule

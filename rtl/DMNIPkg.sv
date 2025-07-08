@@ -16,6 +16,8 @@
 
 package DMNIPkg;
 
+    parameter logic [7:0] MONITOR = 8'h44;
+
     typedef enum logic [7:0] {
         DMNI_STATUS             = 8'h00,
         DMNI_IRQ                = 8'h04,
@@ -35,7 +37,12 @@ package DMNIPkg;
         DMNI_HERMES_ADDRESS_2   = 8'h3C,
 
         DMNI_BR_KSVC            = 8'h40,
-        DMNI_BR_PAYLOAD         = 8'h44
+        DMNI_BR_PAYLOAD         = 8'h44,
+
+        DMNI_MON_BASE           = 8'h50,
+        DMNI_MON_LENGTH         = 8'h54,
+        DMNI_MON_SEM_OC         = 8'h58,
+        DMNI_MON_SEM_AV         = 8'h5C
     } dmni_mmr_t;
 
     typedef struct packed {
