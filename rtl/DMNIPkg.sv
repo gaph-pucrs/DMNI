@@ -20,7 +20,8 @@ package DMNIPkg;
 
     typedef enum logic [7:0] {
         DMNI_STATUS             = 8'h00,
-        DMNI_IRQ                = 8'h04,
+        DMNI_IRQ_ENABLE         = 8'h04,
+        DMNI_IRQ_PENDING        = 8'h08,
 
         DMNI_ADDRESS            = 8'h10,
         DMNI_MANYCORE_SZ        = 8'h14,

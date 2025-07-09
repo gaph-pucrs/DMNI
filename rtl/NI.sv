@@ -88,16 +88,21 @@ module NI
     end
 
 ////////////////////////////////////////////////////////////////////////////////
-//  IRQ Control
-////////////////////////////////////////////////////////////////////////////////
-
-    logic pending_svc;
-
-    assign irq_o = ((pending_svc && !hermes_send_active_i) || br_rx_i || hermes_receive_available_i);
-
-////////////////////////////////////////////////////////////////////////////////
 //  MMR Read
 ////////////////////////////////////////////////////////////////////////////////
+
+    logic [7:0] ie;
+    assign ie = {3'b000, monitor_ie, pending_ie, brlite_ie, hermes_ie, 1'b0};
+
+    logic [7:0] ip;
+    assign ip = {3'b000, (mon_sem_oc_i != '0), pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
+
+    logic hermes_ie;
+    logic brlite_ie;
+    logic pending_ie;
+    logic monitor_ie;
+
+    logic pending_svc;
 
     logic [31:0] cfg_data;
 
@@ -105,7 +110,8 @@ module NI
         case (cfg_addr_i)
             /* IRQ */
             DMNI_STATUS:           cfg_data = {24'h000000, mon_active_i, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i, release_peripheral_o, 1'b0, 1'b0, 1'b0};
-            DMNI_IRQ:              cfg_data = {28'h0000000, pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
+            DMNI_IRQ_ENABLE:       cfg_data = {24'h000000, ie};
+            DMNI_IRQ_PENDING:      cfg_data = {24'h000000, ip};
 
             /* Software config */
             DMNI_ADDRESS:          cfg_data = {16'h0000, ADDRESS};
@@ -143,20 +149,57 @@ module NI
         else if (cfg_en_i && (cfg_we_i == '0))
             cfg_data_o <= cfg_data;
     end
-
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni)
-            pending_svc <= 1'b0;
-        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ)
-            pending_svc <= cfg_data_i[3];
-    end
-
+    
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             release_peripheral_o <= 1'b0;
         else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
             release_peripheral_o <= cfg_data_i[3];
     end
+
+////////////////////////////////////////////////////////////////////////////////
+//  IRQ Control
+////////////////////////////////////////////////////////////////////////////////
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            hermes_ie <= 1'b0;
+        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
+            hermes_ie <= cfg_data_i[1];
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            brlite_ie <= 1'b0;
+        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
+            brlite_ie <= cfg_data_i[2];
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            pending_ie <= 1'b0;
+        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
+            pending_ie <= cfg_data_i[3];
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            monitor_ie <= 1'b0;
+        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
+            monitor_ie <= cfg_data_i[4];
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            pending_svc <= 1'b0;
+        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_PENDING)
+            pending_svc <= cfg_data_i[3];
+    end
+
+    logic [7:0] irq;
+    assign irq = ie & ip;
+
+    assign irq_o = ({irq[7:3], irq[1:0]} != '0) || (irq[2] && !hermes_send_active_i);
 
 ////////////////////////////////////////////////////////////////////////////////
 //  Hermes
