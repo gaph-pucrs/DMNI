@@ -545,7 +545,11 @@ module DMA
     end
 
     assign mem_data_o   = noc_data_i;
-    assign noc_credit_o = (hermes_receive_active_o && can_receive) || (hermes_monitor_active_o && can_monitor);
+    assign noc_credit_o = (
+           (hermes_receive_active_o && can_receive) 
+        || (hermes_monitor_active_o && can_monitor)
+        || (hermes_monitor_state == HERMES_MONITOR_AVAILABLE && monitor_available) /* Drop header */
+    );
 
 ////////////////////////////////////////////////////////////////////////////////
 // Reporting
