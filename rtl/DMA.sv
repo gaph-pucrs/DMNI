@@ -57,8 +57,8 @@ module DMA
     input  logic                            hermes_monitor_reset_i,
     input  logic                            hermes_monitor_sem_av_post_i,
     input  logic                            hermes_monitor_sem_oc_wait_i,
-    input  logic                     [ 7:0] hermes_monitor_sem_av_i,
-    input  logic                     [ 7:0] hermes_monitor_size_i,
+    input  logic                     [ 7:0] hermes_monitor_length_i,
+    input  logic                     [ 7:0] hermes_monitor_flits_i,
     input  logic                     [31:0] hermes_monitor_addr_i,
     output logic                     [ 7:0] hermes_monitor_sem_oc_o,
     output logic                            hermes_monitor_active_o
@@ -91,14 +91,6 @@ module DMA
         can_receive = (
             noc_rx_i 
             && current_arbit == ARBIT_RECEIVE
-        );
-    end
-
-    logic can_monitor;
-    always_comb begin
-        can_monitor = (
-            noc_rx_i 
-            && current_arbit == ARBIT_MONITOR
         );
     end
 
@@ -152,7 +144,7 @@ module DMA
                 end
             end
             HERMES_RECEIVE_EOP:
-                hermes_receive_next_state = (can_monitor && noc_eop_i)
+                hermes_receive_next_state = (noc_rx_i && noc_eop_i)
                     ? HERMES_RECEIVE_HEADER
                     : HERMES_RECEIVE_EOP;
             default:
@@ -174,18 +166,23 @@ module DMA
 // NoC Monitor FSM
 ////////////////////////////////////////////////////////////////////////////////
     
-    typedef enum logic [4:0] {  
-        HERMES_MONITOR_HEADER    = 5'b00001,
-        HERMES_MONITOR_AVAILABLE = 5'b00010,
-        HERMES_MONITOR_RECEIVE   = 5'b00100,
-        HERMES_MONITOR_OCCUPIED  = 5'b01000,
-        HERMES_MONITOR_EOP       = 5'b10000
+    typedef enum logic [6:0] {  
+        HERMES_MONITOR_HEADER    = 7'b0000001,
+        HERMES_MONITOR_AVAILABLE = 7'b0000010,
+        HERMES_MONITOR_RECEIVE   = 7'b0000100,
+        HERMES_MONITOR_OCCUPIED  = 7'b0001000,
+        HERMES_MONITOR_EOP       = 7'b0010000,
+        HERMES_MONITOR_DROP      = 7'b0100000,
+        HERMES_MONITOR_DROP_OCC  = 7'b1000000
     } hermes_monitor_t;
     
     hermes_monitor_t hermes_monitor_state;
 
     logic mon_sem_av_wait;
     assign mon_sem_av_wait = (hermes_monitor_state == HERMES_MONITOR_AVAILABLE);
+
+    logic monitor_available;
+    assign monitor_available = (monitor_sem_av != '0);
 
     logic [7:0] monitor_sem_av;
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -194,18 +191,28 @@ module DMA
         end
         else begin
             if (hermes_monitor_reset_i)
-                monitor_sem_av <= hermes_monitor_sem_av_i;
+                monitor_sem_av <= hermes_monitor_length_i;
 
-            if (hermes_monitor_sem_av_post_i && !(mon_sem_av_wait && monitor_sem_av > '0))
+            if (hermes_monitor_sem_av_post_i && !(mon_sem_av_wait && monitor_available))
                 monitor_sem_av <= monitor_sem_av + 1'b1;
             
-            if (!hermes_monitor_sem_av_post_i && (mon_sem_av_wait && monitor_sem_av > '0))
+            if (!hermes_monitor_sem_av_post_i && (mon_sem_av_wait && monitor_available))
                 monitor_sem_av <= monitor_sem_av - 1'b1;
         end
     end
-
-    logic monitor_available;
-    assign monitor_available = (monitor_sem_av > '0);
+    
+    logic [7:0] monitor_cnt;
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            monitor_cnt <= '0;
+        end
+        else begin
+            if (hermes_monitor_state == HERMES_MONITOR_AVAILABLE)
+                monitor_cnt <= '0;
+            else if (hermes_monitor_state == HERMES_MONITOR_RECEIVE && noc_rx_i)
+                monitor_cnt <= monitor_cnt + 1'b1;
+        end
+    end
 
     hermes_monitor_t hermes_monitor_next_state;
     always_comb begin
@@ -223,15 +230,30 @@ module DMA
             HERMES_MONITOR_AVAILABLE:
                 hermes_monitor_next_state = monitor_available
                     ? HERMES_MONITOR_RECEIVE
-                    : HERMES_MONITOR_AVAILABLE;
-            HERMES_MONITOR_RECEIVE:
-                hermes_monitor_next_state = (can_monitor && noc_eop_i)
-                    ? HERMES_MONITOR_OCCUPIED
-                    : HERMES_MONITOR_RECEIVE;
+                    : HERMES_MONITOR_DROP;
+            HERMES_MONITOR_RECEIVE: begin
+                if (noc_rx_i && noc_eop_i) begin
+                    hermes_monitor_next_state = HERMES_MONITOR_OCCUPIED;
+                end
+                else if (noc_rx_i && (monitor_cnt == (hermes_monitor_flits_i - 1'b1))) begin
+                    hermes_monitor_next_state = HERMES_MONITOR_DROP_OCC;
+                end
+                else begin
+                    hermes_monitor_next_state = HERMES_MONITOR_RECEIVE;
+                end
+            end
             HERMES_MONITOR_EOP:
                 hermes_monitor_next_state = (can_receive && noc_eop_i)
                     ? HERMES_MONITOR_HEADER
                     : HERMES_MONITOR_EOP;
+            HERMES_MONITOR_DROP:
+                hermes_monitor_next_state = (noc_rx_i && noc_eop_i)
+                    ? HERMES_MONITOR_HEADER
+                    : HERMES_MONITOR_DROP;
+            HERMES_MONITOR_DROP_OCC:
+                hermes_monitor_next_state = (noc_rx_i && noc_eop_i)
+                    ? HERMES_MONITOR_OCCUPIED
+                    : HERMES_MONITOR_DROP_OCC;
             default:    /* HERMES_MONITOR_OCCUPIED */
                 hermes_monitor_next_state = HERMES_MONITOR_HEADER;
         endcase
@@ -255,7 +277,7 @@ module DMA
         end
         else begin
             if (hermes_monitor_state == HERMES_MONITOR_HEADER) begin
-                if (hermes_monitor_index == hermes_monitor_size_i || hermes_monitor_reset_i) begin
+                if ((hermes_monitor_index == hermes_monitor_length_i) || hermes_monitor_reset_i) begin
                     hermes_monitor_index  <= '0;
                     hermes_monitor_offset <= '0;
                 end
@@ -263,7 +285,7 @@ module DMA
             else if (hermes_monitor_state == HERMES_MONITOR_AVAILABLE) begin
                 hermes_monitor_addr <= hermes_monitor_addr_i + 32'(hermes_monitor_offset);
             end
-            else if (can_monitor && hermes_monitor_active_o && hermes_monitor_addr != '0) begin
+            else if (noc_rx_i && hermes_monitor_active_o && hermes_monitor_addr != '0) begin
                 hermes_monitor_addr   <= hermes_monitor_addr   + 32'h00000004;
                 hermes_monitor_offset <= hermes_monitor_offset + 16'h0004;
                 if (noc_eop_i)
@@ -275,6 +297,9 @@ module DMA
     logic mon_sem_oc_post;
     assign mon_sem_oc_post = (hermes_monitor_state == HERMES_MONITOR_OCCUPIED);
 
+    logic mon_sem_oc_available;
+    assign mon_sem_oc_available = (hermes_monitor_sem_oc_o != '0);
+
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             hermes_monitor_sem_oc_o <= '0;
@@ -283,10 +308,10 @@ module DMA
             if (hermes_monitor_reset_i)
                 hermes_monitor_sem_oc_o <= '0;
             
-            if (mon_sem_oc_post && !(hermes_monitor_sem_oc_wait_i && hermes_monitor_sem_oc_o > '0))
+            if (mon_sem_oc_post && !(hermes_monitor_sem_oc_wait_i && mon_sem_oc_available))
                 hermes_monitor_sem_oc_o <= hermes_monitor_sem_oc_o + 1'b1;
 
-            if (!mon_sem_oc_post && (hermes_monitor_sem_oc_wait_i && hermes_monitor_sem_oc_o > '0))
+            if (!mon_sem_oc_post && (hermes_monitor_sem_oc_wait_i && mon_sem_oc_available))
                 hermes_monitor_sem_oc_o <= hermes_monitor_sem_oc_o - 1'b1;
         end
     end
@@ -314,7 +339,6 @@ module DMA
             && current_arbit == ARBIT_SEND
         );
     end
-
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (rst_ni == 1'b0)
@@ -445,7 +469,7 @@ module DMA
     assign arbit_pending[ARBIT_NONE]    = 1'b0;
     assign arbit_pending[ARBIT_SEND]    = hermes_send_active_o;
     assign arbit_pending[ARBIT_RECEIVE] = hermes_receive_active_o;
-    assign arbit_pending[ARBIT_MONITOR] = hermes_monitor_active_o;
+    assign arbit_pending[ARBIT_MONITOR] = hermes_monitor_active_o || (hermes_monitor_state == HERMES_MONITOR_AVAILABLE && monitor_available);
 
     arbit_t arbit_rr;
     always_comb begin
@@ -539,16 +563,17 @@ module DMA
         case (current_arbit)
             ARBIT_RECEIVE:
                 mem_we_o = {4{hermes_receive_active_o}};
-            default:    /* ARBIT_MONITOR */
+            ARBIT_MONITOR:
                 mem_we_o = {4{hermes_monitor_active_o}};
+            default:    /* ARBIT_MONITOR */
+                mem_we_o = '0;
         endcase
     end
 
     assign mem_data_o   = noc_data_i;
     assign noc_credit_o = (
-           (hermes_receive_active_o && can_receive) 
-        || (hermes_monitor_active_o && can_monitor)
-        || (hermes_monitor_state == HERMES_MONITOR_AVAILABLE && monitor_available) /* Drop header */
+           (hermes_receive_active_o && current_arbit == ARBIT_RECEIVE) 
+        || (hermes_monitor_state inside {HERMES_MONITOR_AVAILABLE, HERMES_MONITOR_RECEIVE, HERMES_MONITOR_DROP, HERMES_MONITOR_DROP_OCC})
     );
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -565,6 +590,17 @@ module DMA
             else if (hermes_receive_active_o && can_receive)
                 hermes_received_cnt_o <= hermes_received_cnt_o + HERMES_FLIT_SIZE/8;
         end
+    end
+
+////////////////////////////////////////////////////////////////////////////////
+// Debug
+////////////////////////////////////////////////////////////////////////////////
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            ;
+        else if (mon_sem_av_wait && !monitor_available)
+            $display("[%7.3f] [DMNI] Monitoring FIFO is full. Dropping packet.", $time()/1_000_000.0);
     end
 
 endmodule
