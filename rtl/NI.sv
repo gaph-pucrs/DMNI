@@ -71,7 +71,7 @@ module NI
     output logic               mon_sem_av_post_o,
     output logic               mon_sem_oc_wait_o,
     output logic        [ 7:0] mon_sem_av_o,
-    output logic        [ 7:0] mon_size_o,
+    output logic        [ 7:0] mon_flits_o,
     output logic        [31:0] mon_addr_o
 );
 
@@ -136,8 +136,9 @@ module NI
             DMNI_RCV_TIMESTAMP:    cfg_data = rcv_timestamp;
 
             DMNI_MON_BASE:         cfg_data = mon_addr_o;
-            DMNI_MON_LENGTH:       cfg_data = 32'(mon_size_o);
-            DMNI_MON_SEM_OC:       cfg_data = 32'(mon_sem_oc_i);
+            DMNI_MON_SEM_OC:       cfg_data = {24'h000000, mon_sem_oc_i};
+            DMNI_MON_SEM_AV:       cfg_data = {24'h000000, mon_sem_av_o};
+            DMNI_MON_FLITS:        cfg_data = {24'h000000, mon_flits_o};
 
             default:               cfg_data = '0;
         endcase
@@ -323,12 +324,18 @@ module NI
         else begin
             mon_sem_av_post_o <= 1'b0;
 
-            if (cfg_addr_i == DMNI_MON_SEM_AV && cfg_we_i != '0) begin
-                if (w_data == 32'hFFFFFFFF)
-                    mon_sem_av_post_o <= 1'b1;
-                else
-                    mon_sem_av_o <= w_data[7:0];
-            end
+            if (cfg_en_i && cfg_addr_i == DMNI_MON_SEM_AV && cfg_we_i != '0 && w_data == 32'hFFFFFFFF)
+                mon_sem_av_post_o <= 1'b1;
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            mon_sem_av_o <= '0;
+        end
+        else begin
+            if (cfg_en_i && cfg_addr_i == DMNI_MON_SEM_AV && cfg_we_i != '0 && w_data != 32'hFFFFFFFF)
+                mon_sem_av_o <= w_data[7:0];
         end
     end
 
@@ -339,18 +346,18 @@ module NI
         else begin
             mon_sem_oc_wait_o <= 1'b0;
 
-            if (cfg_addr_i == DMNI_MON_SEM_OC && cfg_we_i == '0 && mon_sem_oc_i != '0)
+            if (cfg_en_i && cfg_addr_i == DMNI_MON_SEM_OC && cfg_we_i != '0 && w_data == 32'hFFFFFFFF)
                 mon_sem_oc_wait_o <= 1'b1;
         end
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
-            mon_size_o <= '0;
+            mon_flits_o <= '0;
         end
         else begin
-            if (cfg_addr_i == DMNI_MON_LENGTH && cfg_we_i != '0)
-                mon_size_o <= w_data[7:0];
+            if (cfg_en_i && cfg_addr_i == DMNI_MON_FLITS && cfg_we_i != '0)
+                mon_flits_o <= w_data[7:0];
         end
     end
 
@@ -359,7 +366,7 @@ module NI
             mon_addr_o <= '0;
         end
         else begin
-            if (cfg_addr_i == DMNI_MON_BASE && cfg_we_i != '0)
+            if (cfg_en_i && cfg_addr_i == DMNI_MON_BASE && cfg_we_i != '0)
                 mon_addr_o <= w_data;
         end
     end
@@ -372,9 +379,10 @@ module NI
             mon_reset_o <= 1'b0;
 
             if (
-                (
-                    cfg_addr_i inside {DMNI_MON_LENGTH, DMNI_MON_BASE}
-                    || (cfg_addr_i == DMNI_MON_SEM_AV && w_data != 32'hFFFFFFFF)
+                cfg_en_i
+                && (
+                       (cfg_addr_i inside {DMNI_MON_BASE, DMNI_MON_FLITS})
+                    || ((cfg_addr_i inside {DMNI_MON_SEM_OC, DMNI_MON_SEM_AV}) && w_data != 32'hFFFFFFFF)
                 )
                 && cfg_we_i != '0
             )
