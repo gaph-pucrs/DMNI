@@ -136,9 +136,9 @@ module DMNI
     logic        hermes_monitor_sem_av_post;
     logic        hermes_monitor_sem_oc_wait;
     logic        hermes_monitor_active;
-    logic [ 7:0] hermes_monitor_sem_av;
     logic [ 7:0] hermes_monitor_sem_oc;
-    logic [ 7:0] hermes_monitor_size;
+    logic [ 7:0] hermes_monitor_sem_av;
+    logic [ 7:0] hermes_monitor_flits;
     logic [31:0] hermes_monitor_addr;
 
     DMA #(
@@ -173,8 +173,8 @@ module DMNI
         .hermes_monitor_reset_i           (hermes_monitor_reset          ),
         .hermes_monitor_sem_av_post_i     (hermes_monitor_sem_av_post    ),
         .hermes_monitor_sem_oc_wait_i     (hermes_monitor_sem_oc_wait    ),
-        .hermes_monitor_sem_av_i          (hermes_monitor_sem_av         ),
-        .hermes_monitor_size_i            (hermes_monitor_size           ),
+        .hermes_monitor_length_i          (hermes_monitor_sem_av         ),
+        .hermes_monitor_flits_i           (hermes_monitor_flits          ),
         .hermes_monitor_addr_i            (hermes_monitor_addr           ),
         .hermes_monitor_sem_oc_o          (hermes_monitor_sem_oc         ),
         .hermes_monitor_active_o          (hermes_monitor_active         )
@@ -244,7 +244,7 @@ module DMNI
         .mon_sem_av_post_o                (hermes_monitor_sem_av_post    ),
         .mon_sem_oc_wait_o                (hermes_monitor_sem_oc_wait    ),
         .mon_sem_av_o                     (hermes_monitor_sem_av         ),
-        .mon_size_o                       (hermes_monitor_size           ),
+        .mon_flits_o                      (hermes_monitor_flits          ),
         .mon_addr_o                       (hermes_monitor_addr           )
     );
 
