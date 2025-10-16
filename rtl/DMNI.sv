@@ -73,6 +73,11 @@ module DMNI
     output br_payload_t                                 br_data_o
 );
 
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic almost_full;
+    logic almost_empty;
+    /* verilator lint_on UNUSEDSIGNAL */
+
     logic                            hermes_buffer_tx;
     logic                            hermes_buffer_eop;
     logic                            hermes_buffer_ack;
@@ -83,15 +88,17 @@ module DMNI
         .BUFFER_SIZE (HERMES_BUFFER_SIZE)
     )
     hermes_buffer (
-        .clk_i    (clk_i                                  ),
-        .rst_ni   (rst_ni                                 ),
-        .buf_rst_i(1'b0                                   ),
-        .rx_i     (noc_rx_i                               ),
-        .rx_ack_o (noc_credit_o                           ),
-        .data_i   ({noc_eop_i, noc_data_i}                ),
-        .tx_o     (hermes_buffer_tx                       ),
-        .tx_ack_i (hermes_buffer_ack                      ),
-        .data_o   ({hermes_buffer_eop, hermes_buffer_data})
+        .clk_i         (clk_i                                  ),
+        .rst_ni        (rst_ni                                 ),
+        .buf_rst_i     (1'b0                                   ),
+        .rx_i          (noc_rx_i                               ),
+        .rx_ack_o      (noc_credit_o                           ),
+        .data_i        ({noc_eop_i, noc_data_i}                ),
+        .tx_o          (hermes_buffer_tx                       ),
+        .tx_ack_i      (hermes_buffer_ack                      ),
+        .data_o        ({hermes_buffer_eop, hermes_buffer_data}),
+        .almost_full_o (almost_full                            ),
+        .almost_empty_o(almost_empty                           )
     );
 
     logic              dmni_buffer_eop_acked;
@@ -114,6 +121,8 @@ module DMNI
     /* verilator lint_off UNUSEDSIGNAL */
     logic timestamp_ack;
     logic timestamp_tx;
+    logic timestamp_almost_full;
+    logic timestamp_almost_empty;
     /* verilator lint_on UNUSEDSIGNAL */
 
     RingBuffer #(
@@ -121,15 +130,17 @@ module DMNI
         .BUFFER_SIZE (HERMES_BUFFER_SIZE/4 < 2  ? 2 : HERMES_BUFFER_SIZE/4)
     )
     timestamp_buffer (
-        .clk_i    (clk_i                  ),
-        .rst_ni   (rst_ni                 ),
-        .buf_rst_i(1'b0                   ),
-        .rx_i     (hermes_buffer_eop_acked),
-        .rx_ack_o (timestamp_ack          ),
-        .data_i   (tick_counter_i         ),
-        .tx_o     (timestamp_tx           ),
-        .tx_ack_i (dmni_buffer_eop_acked  ),
-        .data_o   (rcv_timestamp          )
+        .clk_i         (clk_i                  ),
+        .rst_ni        (rst_ni                 ),
+        .buf_rst_i     (1'b0                   ),
+        .rx_i          (hermes_buffer_eop_acked),
+        .rx_ack_o      (timestamp_ack          ),
+        .data_i        (tick_counter_i         ),
+        .tx_o          (timestamp_tx           ),
+        .tx_ack_i      (dmni_buffer_eop_acked  ),
+        .data_o        (rcv_timestamp          ),
+        .almost_full_o (timestamp_almost_full  ),
+        .almost_empty_o(timestamp_almost_empty )
     );
 
     logic        hermes_monitor_reset;
@@ -180,6 +191,11 @@ module DMNI
         .hermes_monitor_active_o          (hermes_monitor_active         )
     );
 
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic br_almost_full;
+    logic br_almost_empty;
+    /* verilator lint_on UNUSEDSIGNAL */
+
     logic        br_buffer_tx;
     logic        br_buffer_ack;
     br_payload_t br_buffer_data;
@@ -189,15 +205,17 @@ module DMNI
         .BUFFER_SIZE (BR_BUFFER_SIZE     )
     )
     br_svc_buffer (
-        .clk_i    (clk_i         ),
-        .rst_ni   (rst_ni        ),
-        .buf_rst_i(1'b0          ),
-        .rx_i     (br_req_i      ),
-        .rx_ack_o (br_ack_o      ),
-        .data_i   (br_data_i     ),
-        .tx_o     (br_buffer_tx  ),
-        .tx_ack_i (br_buffer_ack ),
-        .data_o   (br_buffer_data)
+        .clk_i         (clk_i          ),
+        .rst_ni        (rst_ni         ),
+        .buf_rst_i     (1'b0           ),
+        .rx_i          (br_req_i       ),
+        .rx_ack_o      (br_ack_o       ),
+        .data_i        (br_data_i      ),
+        .tx_o          (br_buffer_tx   ),
+        .tx_ack_i      (br_buffer_ack  ),
+        .data_o        (br_buffer_data ),
+        .almost_full_o (br_almost_full ),
+        .almost_empty_o(br_almost_empty)
     );
 
     NI #(
