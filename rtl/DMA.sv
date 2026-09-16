@@ -181,10 +181,11 @@ module DMA
     logic mon_sem_av_wait;
     assign mon_sem_av_wait = (hermes_monitor_state == HERMES_MONITOR_AVAILABLE);
 
+    logic [7:0] monitor_sem_av;
+
     logic monitor_available;
     assign monitor_available = (monitor_sem_av != '0) || hermes_monitor_sem_av_post_i;
 
-    logic [7:0] monitor_sem_av;
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             monitor_sem_av <= '0;
@@ -585,11 +586,13 @@ module DMA
 // Debug
 ////////////////////////////////////////////////////////////////////////////////
 
+`ifndef SYNTH
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             ;
         else if (mon_sem_av_wait && !monitor_available)
             $display("[%7.3f] [DMNI] Monitoring FIFO is full. Dropping packet.", $time()/1_000_000.0);
     end
+`endif
 
 endmodule

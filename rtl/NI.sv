@@ -91,18 +91,18 @@ module NI
 //  MMR Read
 ////////////////////////////////////////////////////////////////////////////////
 
-    logic [7:0] ie;
-    assign ie = {3'b000, monitor_ie, pending_ie, brlite_ie, hermes_ie, 1'b0};
-
-    logic [7:0] ip;
-    assign ip = {3'b000, (mon_sem_oc_i != '0), pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
-
     logic hermes_ie;
     logic brlite_ie;
     logic pending_ie;
     logic monitor_ie;
 
     logic pending_svc;
+
+    logic [7:0] ie;
+    assign ie = {3'b000, monitor_ie, pending_ie, brlite_ie, hermes_ie, 1'b0};
+
+    logic [7:0] ip;
+    assign ip = {3'b000, (mon_sem_oc_i != '0), pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
 
     logic [31:0] cfg_data;
 
@@ -282,16 +282,22 @@ module NI
         if (!rst_ni) begin
             br_data_o <= '0;
         end
-        else if (cfg_en_i) begin
-            if (cfg_addr_i == DMNI_BR_KSVC && cfg_we_i[0])
-                br_data_o.ksvc <= cfg_data_i[3:0];
+        else begin
+            /* seq_source is inserted by the PE, the NI never writes it: keep it
+               driven every cycle so that it maps to a register and not a latch */
+            br_data_o.seq_source <= '0;
 
-            if (cfg_addr_i == DMNI_BR_PAYLOAD) begin
-                if (cfg_we_i[0])
-                    br_data_o.payload[7:0] <= cfg_data_i[7:0];
+            if (cfg_en_i) begin
+                if (cfg_addr_i == DMNI_BR_KSVC && cfg_we_i[0])
+                    br_data_o.ksvc <= cfg_data_i[3:0];
 
-                if (cfg_we_i[1])
-                    br_data_o.payload[15:8] <= cfg_data_i[15:8];
+                if (cfg_addr_i == DMNI_BR_PAYLOAD) begin
+                    if (cfg_we_i[0])
+                        br_data_o.payload[7:0] <= cfg_data_i[7:0];
+
+                    if (cfg_we_i[1])
+                        br_data_o.payload[15:8] <= cfg_data_i[15:8];
+                end
             end
         end
     end
