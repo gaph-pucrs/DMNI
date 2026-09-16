@@ -639,11 +639,13 @@ module DMA
 // Debug
 ////////////////////////////////////////////////////////////////////////////////
 
+`ifndef SYNTH
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             ;
         else if (mon_sem_av_wait && !monitor_available)
             $display("[%7.3f] [DMNI] Monitoring FIFO is full. Dropping packet.", $time()/1_000_000.0);
     end
+`endif
 
 endmodule

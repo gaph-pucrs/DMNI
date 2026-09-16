@@ -282,16 +282,22 @@ module NI
         if (!rst_ni) begin
             br_data_o <= '0;
         end
-        else if (cfg_en_i) begin
-            if (cfg_addr_i == DMNI_BR_KSVC && cfg_we_i[0])
-                br_data_o.ksvc <= cfg_data_i[3:0];
+        else begin
+            /* seq_source is inserted by the PE, the NI never writes it: keep it
+               driven every cycle so that it maps to a register and not a latch */
+            br_data_o.seq_source <= '0;
 
-            if (cfg_addr_i == DMNI_BR_PAYLOAD) begin
-                if (cfg_we_i[0])
-                    br_data_o.payload[7:0] <= cfg_data_i[7:0];
+            if (cfg_en_i) begin
+                if (cfg_addr_i == DMNI_BR_KSVC && cfg_we_i[0])
+                    br_data_o.ksvc <= cfg_data_i[3:0];
 
-                if (cfg_we_i[1])
-                    br_data_o.payload[15:8] <= cfg_data_i[15:8];
+                if (cfg_addr_i == DMNI_BR_PAYLOAD) begin
+                    if (cfg_we_i[0])
+                        br_data_o.payload[7:0] <= cfg_data_i[7:0];
+
+                    if (cfg_we_i[1])
+                        br_data_o.payload[15:8] <= cfg_data_i[15:8];
+                end
             end
         end
     end
