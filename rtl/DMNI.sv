@@ -153,7 +153,8 @@ module DMNI
     logic [31:0] hermes_monitor_addr;
 
     DMA #(
-        .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE)
+        .HERMES_FLIT_SIZE (HERMES_FLIT_SIZE),
+        .ADDRESS          (ADDRESS         )
     )
     dma (
         .clk_i                            (clk_i                         ),

@@ -16,7 +16,8 @@
 module DMA
     import DMNIPkg::*;
 #(
-    parameter HERMES_FLIT_SIZE = 32
+    parameter              HERMES_FLIT_SIZE = 32,
+    parameter logic [15:0] ADDRESS          = 16'b0
 )
 (
     input  logic                            clk_i,
@@ -73,18 +74,50 @@ module DMA
 
     arbit_t current_arbit;
 
+    typedef enum logic [3:0] {
+        HERMES_SEND_IDLE    = 4'b0001,
+        HERMES_SEND_PRELOAD = 4'b0010,
+        HERMES_SEND_DATA    = 4'b0100,
+        HERMES_SEND_STOP    = 4'b1000
+    } hermes_send_t;
+
+    hermes_send_t hermes_send_state;
+
 ////////////////////////////////////////////////////////////////////////////////
 // NoC Receive FSM
 ////////////////////////////////////////////////////////////////////////////////
 
-    typedef enum logic [3:0] {  
-        HERMES_RECEIVE_HEADER = 4'b0001,
-        HERMES_RECEIVE_WAIT   = 4'b0010,
-        HERMES_RECEIVE_DATA   = 4'b0100,
-        HERMES_RECEIVE_EOP    = 4'b1000
+    typedef enum logic [5:0] {
+        HERMES_RECEIVE_HEADER          = 6'b000001,
+        HERMES_RECEIVE_WAIT            = 6'b000010,
+        HERMES_RECEIVE_DATA            = 6'b000100,
+        HERMES_RECEIVE_EOP             = 6'b001000,
+        HERMES_RECEIVE_LOOPBACK_HEADER = 6'b010000,
+        HERMES_RECEIVE_LOOPBACK_DATA   = 6'b100000
     } hermes_receive_t;
 
     hermes_receive_t hermes_receive_state;
+
+    logic sr_header;            /* any SR header: never a normal or monitoring packet */
+    assign sr_header = noc_data_i[SR_FLAG];
+
+    logic sr_turn_here;         /* SR header that targets this PE: consumed here */
+    assign sr_turn_here = sr_header && (noc_data_i[15:0] == ADDRESS);
+
+    logic loopback_active;      /* either loopback state */
+    assign loopback_active = (hermes_receive_state inside {HERMES_RECEIVE_LOOPBACK_HEADER, HERMES_RECEIVE_LOOPBACK_DATA});
+
+    logic loopback_data;        /* the input buffer drives the output link */
+    assign loopback_data = (hermes_receive_state == HERMES_RECEIVE_LOOPBACK_DATA);
+
+    logic loopback_xfer;        /* one flit moves from the input buffer to the router */
+    assign loopback_xfer = loopback_data && noc_rx_i && noc_ack_i;
+
+    logic loopback_drop_header; /* the SR header is popped without being forwarded */
+    assign loopback_drop_header = (hermes_receive_state == HERMES_RECEIVE_LOOPBACK_HEADER) && noc_rx_i;
+
+    logic loopback_eop_ack;     /* the last flit of a looped packet left the input buffer */
+    assign loopback_eop_ack = noc_eop_i && (loopback_xfer || loopback_drop_header);
 
     logic can_receive;
     always_comb begin
@@ -117,13 +150,22 @@ module DMA
     always_comb begin
         case (hermes_receive_state)
             HERMES_RECEIVE_HEADER: begin
-                if (noc_rx_i) begin
-                    hermes_receive_next_state = (noc_data_i[23:16] != MONITOR) 
-                        ? HERMES_RECEIVE_WAIT 
-                        : HERMES_RECEIVE_EOP;
+                if (!noc_rx_i) begin
+                    hermes_receive_next_state = HERMES_RECEIVE_HEADER;
+                end
+                else if (sr_header) begin
+                    /* The loopback shares the output link with the Send FSM */
+                    if (hermes_send_state != HERMES_SEND_IDLE)
+                        hermes_receive_next_state = HERMES_RECEIVE_HEADER;
+                    else
+                        hermes_receive_next_state = sr_turn_here
+                            ? HERMES_RECEIVE_LOOPBACK_HEADER    /* drop this header, forward the rest */
+                            : HERMES_RECEIVE_LOOPBACK_DATA;     /* forward the whole packet unchanged */
                 end
                 else begin
-                    hermes_receive_next_state = HERMES_RECEIVE_HEADER;
+                    hermes_receive_next_state = (noc_data_i[23:16] != MONITOR)
+                        ? HERMES_RECEIVE_WAIT
+                        : HERMES_RECEIVE_EOP;
                 end
             end
             HERMES_RECEIVE_WAIT:
@@ -147,6 +189,19 @@ module DMA
                 hermes_receive_next_state = (noc_rx_i && noc_eop_i)
                     ? HERMES_RECEIVE_HEADER
                     : HERMES_RECEIVE_EOP;
+            HERMES_RECEIVE_LOOPBACK_HEADER: begin
+                if (!noc_rx_i)
+                    hermes_receive_next_state = HERMES_RECEIVE_LOOPBACK_HEADER;
+                else
+                    /* A single-flit SR packet has nothing to forward: drop it */
+                    hermes_receive_next_state = noc_eop_i
+                        ? HERMES_RECEIVE_HEADER
+                        : HERMES_RECEIVE_LOOPBACK_DATA;
+            end
+            HERMES_RECEIVE_LOOPBACK_DATA:
+                hermes_receive_next_state = (loopback_xfer && noc_eop_i)
+                    ? HERMES_RECEIVE_HEADER
+                    : HERMES_RECEIVE_LOOPBACK_DATA;
             default:
                 hermes_receive_next_state = HERMES_RECEIVE_HEADER;
         endcase
@@ -181,10 +236,11 @@ module DMA
     logic mon_sem_av_wait;
     assign mon_sem_av_wait = (hermes_monitor_state == HERMES_MONITOR_AVAILABLE);
 
+    logic [7:0] monitor_sem_av;
+
     logic monitor_available;
     assign monitor_available = (monitor_sem_av != '0) || hermes_monitor_sem_av_post_i;
 
-    logic [7:0] monitor_sem_av;
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             monitor_sem_av <= '0;
@@ -217,8 +273,8 @@ module DMA
         case (hermes_monitor_state)
             HERMES_MONITOR_HEADER: begin
                 if (noc_rx_i) begin
-                    hermes_monitor_next_state = (noc_data_i[23:16] == MONITOR) 
-                        ? HERMES_MONITOR_AVAILABLE 
+                    hermes_monitor_next_state = (!sr_header && noc_data_i[23:16] == MONITOR)
+                        ? HERMES_MONITOR_AVAILABLE
                         : HERMES_MONITOR_EOP;
                 end
                 else begin
@@ -238,7 +294,7 @@ module DMA
                     hermes_monitor_next_state = HERMES_MONITOR_RECEIVE;
             end
             HERMES_MONITOR_EOP:
-                hermes_monitor_next_state = (can_receive && noc_eop_i)
+                hermes_monitor_next_state = ((can_receive && noc_eop_i) || loopback_eop_ack)
                     ? HERMES_MONITOR_HEADER
                     : HERMES_MONITOR_EOP;
             HERMES_MONITOR_DROP:
@@ -314,15 +370,6 @@ module DMA
 ////////////////////////////////////////////////////////////////////////////////
 // NoC Send FSM
 ////////////////////////////////////////////////////////////////////////////////
-    
-    typedef enum logic [3:0] {
-        HERMES_SEND_IDLE    = 4'b0001,
-        HERMES_SEND_PRELOAD = 4'b0010,
-        HERMES_SEND_DATA    = 4'b0100,
-        HERMES_SEND_STOP    = 4'b1000
-    } hermes_send_t;
-
-    hermes_send_t hermes_send_state;
 
     logic can_send;
     logic can_send_r;
@@ -441,9 +488,12 @@ module DMA
             hermes_send_state <= hermes_send_next_state;
     end
 
-    assign noc_tx_o   = (hermes_send_state inside {HERMES_SEND_DATA, HERMES_SEND_STOP}) && current_arbit == ARBIT_SEND;
-    assign noc_eop_o  = (hermes_send_state == HERMES_SEND_STOP);
-    assign noc_data_o = mem_data_i;
+    /* During a loopback the input buffer drives the output link directly */
+    assign noc_tx_o   = loopback_data
+        ? noc_rx_i
+        : (hermes_send_state inside {HERMES_SEND_DATA, HERMES_SEND_STOP}) && current_arbit == ARBIT_SEND;
+    assign noc_eop_o  = loopback_data ? noc_eop_i  : (hermes_send_state == HERMES_SEND_STOP);
+    assign noc_data_o = loopback_data ? noc_data_i : mem_data_i;
     assign hermes_send_active_o = (hermes_send_state != HERMES_SEND_IDLE);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -460,7 +510,7 @@ module DMA
 
     arbit_pending_t arbit_pending;
     assign arbit_pending[ARBIT_NONE]    = 1'b0;
-    assign arbit_pending[ARBIT_SEND]    = hermes_send_active_o;
+    assign arbit_pending[ARBIT_SEND]    = hermes_send_active_o && !loopback_active;
     assign arbit_pending[ARBIT_RECEIVE] = hermes_receive_active_o;
     assign arbit_pending[ARBIT_MONITOR] = hermes_monitor_active_o || (mon_sem_av_wait && monitor_available);
 
@@ -563,6 +613,8 @@ module DMA
            (hermes_receive_active_o && current_arbit == ARBIT_RECEIVE) 
         || (hermes_monitor_state inside {HERMES_MONITOR_AVAILABLE, HERMES_MONITOR_DROP, HERMES_MONITOR_DROP_OCC})
         || (hermes_monitor_active_o && current_arbit == ARBIT_MONITOR)
+        || loopback_drop_header
+        || loopback_xfer
     );
 
 ////////////////////////////////////////////////////////////////////////////////
