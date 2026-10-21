@@ -18,6 +18,9 @@ package DMNIPkg;
 
     parameter logic [7:0] MONITOR = 8'h44;
 
+    /* Header flit bit that marks an intermediate source-routing header */
+    parameter int SR_FLAG = 27;
+
     typedef enum logic [7:0] {
         DMNI_STATUS             = 8'h00,
         DMNI_IRQ_ENABLE         = 8'h04,

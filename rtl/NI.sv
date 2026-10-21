@@ -91,18 +91,18 @@ module NI
 //  MMR Read
 ////////////////////////////////////////////////////////////////////////////////
 
-    logic [7:0] ie;
-    assign ie = {3'b000, monitor_ie, pending_ie, brlite_ie, hermes_ie, 1'b0};
-
-    logic [7:0] ip;
-    assign ip = {3'b000, (mon_sem_oc_i != '0), pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
-
     logic hermes_ie;
     logic brlite_ie;
     logic pending_ie;
     logic monitor_ie;
 
     logic pending_svc;
+
+    logic [7:0] ie;
+    assign ie = {3'b000, monitor_ie, pending_ie, brlite_ie, hermes_ie, 1'b0};
+
+    logic [7:0] ip;
+    assign ip = {3'b000, (mon_sem_oc_i != '0), pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
 
     logic [31:0] cfg_data;
 
