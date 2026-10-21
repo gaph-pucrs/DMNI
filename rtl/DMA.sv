@@ -73,11 +73,10 @@ module DMA
 
     arbit_t current_arbit;
 
-    typedef enum logic [3:0] {
-        HERMES_SEND_IDLE    = 4'b0001,
-        HERMES_SEND_PRELOAD = 4'b0010,
-        HERMES_SEND_DATA    = 4'b0100,
-        HERMES_SEND_STOP    = 4'b1000
+    typedef enum logic [2:0] {
+        HERMES_SEND_IDLE  = 3'b001,
+        HERMES_SEND_DATA  = 3'b010,
+        HERMES_SEND_DRAIN = 3'b100
     } hermes_send_t;
 
     hermes_send_t hermes_send_state;
@@ -371,31 +370,72 @@ module DMA
 // NoC Send FSM
 ////////////////////////////////////////////////////////////////////////////////
 
-    logic can_send;
-    logic can_send_r;
-    always_comb begin
-        can_send = (
-            noc_ack_i 
-            && current_arbit == ARBIT_SEND
-        );
-    end
-
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (rst_ni == 1'b0)
-            can_send_r <= 1'b1;
-        else
-            can_send_r <= can_send;
-    end
-
     logic [31:0] hermes_send_addr;
     logic [31:0] hermes_send_addr_2;
     logic [31:0] hermes_send_size;
     logic [31:0] hermes_send_size_2;
 
-    logic [31:0] hermes_send_addr_r;
-    logic [31:0] hermes_send_addr_2_r;
-    logic [31:0] hermes_send_size_r;
-    logic [31:0] hermes_send_size_2_r;
+    logic                            skid_tx;
+    logic                            skid_eop;
+    logic [(HERMES_FLIT_SIZE - 1):0] skid_data;
+
+    /**
+     * Memory reads take one cycle, so a word is always in flight.
+     * Only read when the word on the link will be gone when the new one arrives.
+     */
+    logic send_read;
+    assign send_read = (
+        hermes_send_state == HERMES_SEND_DATA
+        && current_arbit == ARBIT_SEND
+        && (!skid_tx || noc_ack_i)
+    );
+
+    logic send_read_last;
+    assign send_read_last = send_read && (
+        (hermes_send_size == 32'b1 && hermes_send_size_2 == '0) ||
+        (hermes_send_size == '0    && hermes_send_size_2 == 32'b1)
+    );
+
+    logic send_read_r;
+    logic send_read_last_r;
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) begin
+            send_read_r      <= 1'b0;
+            send_read_last_r <= 1'b0;
+        end
+        else begin
+            send_read_r      <= send_read;
+            send_read_last_r <= send_read_last;
+        end
+    end
+
+    /* Skid buffer: holds the in-flight word when the credit drops */
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic skid_rx_ack;
+    logic skid_almost_full;
+    logic skid_almost_empty;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    RingBuffer #(
+        .DATA_SIZE              (HERMES_FLIT_SIZE + 1),
+        .BUFFER_SIZE            (1                   ),
+        .FIRST_WORD_FALL_THROUGH(1                   ),
+        .ALMOST_FULL_THRESHOLD  (0                   ),
+        .ALMOST_EMPTY_THRESHOLD (0                   )
+    )
+    skid_buffer (
+        .clk_i         (clk_i                                                   ),
+        .rst_ni        (rst_ni                                                  ),
+        .buf_rst_i     (1'b0                                                    ),
+        .rx_i          (send_read_r                                             ),
+        .rx_ack_o      (skid_rx_ack                                             ),
+        .data_i        ({send_read_last_r, mem_data_i[(HERMES_FLIT_SIZE - 1):0]}),
+        .tx_o          (skid_tx                                                 ),
+        .tx_ack_i      (noc_ack_i                                               ),
+        .data_o        ({skid_eop, skid_data}                                   ),
+        .almost_full_o (skid_almost_full                                        ),
+        .almost_empty_o(skid_almost_empty                                       )
+    );
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -411,7 +451,7 @@ module DMA
                 hermes_send_size   <= hermes_size_i;
                 hermes_send_size_2 <= hermes_size_2_i;
             end
-            else if (can_send) begin
+            else if (send_read) begin
                 if (hermes_send_size != '0) begin
                     hermes_send_addr <= hermes_send_addr + 32'h4;
                     hermes_send_size <= hermes_send_size - 32'b1;
@@ -421,61 +461,25 @@ module DMA
                     hermes_send_size_2 <= hermes_send_size_2 - 32'b1;
                 end
             end
-            else if (can_send_r) begin
-                /* Credit drop, roll back address and size */
-                hermes_send_addr   <= hermes_send_addr_r;
-                hermes_send_addr_2 <= hermes_send_addr_2_r;
-                hermes_send_size   <= hermes_send_size_r;
-                hermes_send_size_2 <= hermes_send_size_2_r;
-            end
-        end
-    end
-
-    /* This is needed as the credit will drop after the memory address has changed */
-    always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni) begin
-            hermes_send_addr_r   <= '0;
-            hermes_send_addr_2_r <= '0;
-            hermes_send_size_r   <= '0;
-            hermes_send_size_2_r <= '0;
-        end
-        else if (noc_ack_i) begin
-            hermes_send_addr_r   <= hermes_send_addr;
-            hermes_send_addr_2_r <= hermes_send_addr_2;
-            hermes_send_size_r   <= hermes_send_size;
-            hermes_send_size_2_r <= hermes_send_size_2;
         end
     end
 
     hermes_send_t hermes_send_next_state;
     always_comb begin
-        case (hermes_send_state) 
+        case (hermes_send_state)
             HERMES_SEND_IDLE:
                 hermes_send_next_state = hermes_st_snd_i
-                    ? HERMES_SEND_PRELOAD 
-                    : HERMES_SEND_IDLE;
-            HERMES_SEND_PRELOAD:
-                hermes_send_next_state = (can_send)
                     ? HERMES_SEND_DATA
-                    : HERMES_SEND_PRELOAD;
-            HERMES_SEND_DATA: begin
-                if (!can_send) begin
-                    hermes_send_next_state = HERMES_SEND_PRELOAD;
-                end 
-                else begin
-                    if (
-                        (hermes_send_size == 32'b1 && hermes_send_size_2 == '0) ||
-                        (hermes_send_size == '0 && hermes_send_size_2 == 32'b1)
-                    )
-                        hermes_send_next_state = HERMES_SEND_STOP;
-                    else
-                        hermes_send_next_state = HERMES_SEND_DATA;
-                end
-            end
-            HERMES_SEND_STOP:
-                hermes_send_next_state = (noc_ack_i && current_arbit == ARBIT_SEND)
+                    : HERMES_SEND_IDLE;
+            HERMES_SEND_DATA:
+                hermes_send_next_state = send_read_last
+                    ? HERMES_SEND_DRAIN
+                    : HERMES_SEND_DATA;
+            HERMES_SEND_DRAIN:
+                /* Wait for the last flit to leave the skid buffer */
+                hermes_send_next_state = (skid_tx && noc_ack_i && skid_eop)
                     ? HERMES_SEND_IDLE
-                    : HERMES_SEND_STOP;
+                    : HERMES_SEND_DRAIN;
             default:
                 hermes_send_next_state = HERMES_SEND_IDLE;
         endcase
@@ -489,11 +493,9 @@ module DMA
     end
 
     /* During a loopback the input buffer drives the output link directly */
-    assign noc_tx_o   = loopback_data
-        ? noc_rx_i
-        : (hermes_send_state inside {HERMES_SEND_DATA, HERMES_SEND_STOP}) && current_arbit == ARBIT_SEND;
-    assign noc_eop_o  = loopback_data ? noc_eop_i  : (hermes_send_state == HERMES_SEND_STOP);
-    assign noc_data_o = loopback_data ? noc_data_i : mem_data_i;
+    assign noc_tx_o   = loopback_data ? noc_rx_i   : skid_tx;
+    assign noc_eop_o  = loopback_data ? noc_eop_i  : skid_eop;
+    assign noc_data_o = loopback_data ? noc_data_i : skid_data;
     assign hermes_send_active_o = (hermes_send_state != HERMES_SEND_IDLE);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -510,7 +512,7 @@ module DMA
 
     arbit_pending_t arbit_pending;
     assign arbit_pending[ARBIT_NONE]    = 1'b0;
-    assign arbit_pending[ARBIT_SEND]    = hermes_send_active_o && !loopback_active;
+    assign arbit_pending[ARBIT_SEND]    = (hermes_send_state == HERMES_SEND_DATA) && !loopback_active;
     assign arbit_pending[ARBIT_RECEIVE] = hermes_receive_active_o;
     assign arbit_pending[ARBIT_MONITOR] = hermes_monitor_active_o || (mon_sem_av_wait && monitor_available);
 
@@ -568,7 +570,7 @@ module DMA
     always_comb begin
         case (current_arbit)
             ARBIT_SEND:
-                mem_en_o = hermes_send_active_o;
+                mem_en_o = send_read;
             ARBIT_RECEIVE:
                 mem_en_o = (
                     hermes_receive_active_o 
