@@ -16,8 +16,7 @@
 module DMA
     import DMNIPkg::*;
 #(
-    parameter              HERMES_FLIT_SIZE = 32,
-    parameter logic [15:0] ADDRESS          = 16'b0
+    parameter HERMES_FLIT_SIZE = 32
 )
 (
     input  logic                            clk_i,
@@ -98,11 +97,14 @@ module DMA
 
     hermes_receive_t hermes_receive_state;
 
-    logic sr_header;            /* any SR header: never a normal or monitoring packet */
+    /**
+     * SR header: never a normal or monitoring packet. It always targets this PE,
+     * because the router only delivers to the local port when the header's
+     * address is its own (and force-IO is clear), so the DMNI drops it and
+     * loops the rest of the packet back without checking the address.
+     */
+    logic sr_header;
     assign sr_header = noc_data_i[SR_FLAG];
-
-    logic sr_turn_here;         /* SR header that targets this PE: consumed here */
-    assign sr_turn_here = sr_header && (noc_data_i[15:0] == ADDRESS);
 
     logic loopback_active;      /* either loopback state */
     assign loopback_active = (hermes_receive_state inside {HERMES_RECEIVE_LOOPBACK_HEADER, HERMES_RECEIVE_LOOPBACK_DATA});
@@ -158,9 +160,7 @@ module DMA
                     if (hermes_send_state != HERMES_SEND_IDLE)
                         hermes_receive_next_state = HERMES_RECEIVE_HEADER;
                     else
-                        hermes_receive_next_state = sr_turn_here
-                            ? HERMES_RECEIVE_LOOPBACK_HEADER    /* drop this header, forward the rest */
-                            : HERMES_RECEIVE_LOOPBACK_DATA;     /* forward the whole packet unchanged */
+                        hermes_receive_next_state = HERMES_RECEIVE_LOOPBACK_HEADER; /* drop this header, forward the rest */
                 end
                 else begin
                     hermes_receive_next_state = (noc_data_i[23:16] != MONITOR)
