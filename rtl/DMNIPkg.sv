@@ -48,8 +48,19 @@ package DMNIPkg;
         DMNI_MON_SEM_AV         = 8'h58,
         DMNI_MON_FLITS          = 8'h5C,
 
-        DMNI_OSZ_WINDOW         = 8'h60
+        DMNI_OSZ_WINDOW         = 8'h60,
+        DMNI_OSZ_BLOCK          = 8'h64
     } dmni_mmr_t;
+
+    /**
+     * DMNI_OSZ_BLOCK: port closing of this PE's OSZ zone, written by the kernel
+     *   [3:0]   blocked external ports {S, N, W, E}
+     *   [4]     the E port is the zone's access point (entrance)
+     *   [5]     [31:16] holds a valid source
+     *   [31:16] source accepted by the access point (mapper PE address)
+     */
+    parameter int OSZ_BLOCK_ACCESS_BIT    = 4;
+    parameter int OSZ_BLOCK_SRC_VALID_BIT = 5;
 
     typedef struct packed {
 		logic [15:0] payload;
