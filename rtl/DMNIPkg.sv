@@ -46,7 +46,9 @@ package DMNIPkg;
         DMNI_MON_BASE           = 8'h50,
         DMNI_MON_SEM_OC         = 8'h54,
         DMNI_MON_SEM_AV         = 8'h58,
-        DMNI_MON_FLITS          = 8'h5C
+        DMNI_MON_FLITS          = 8'h5C,
+
+        DMNI_OSZ_WINDOW         = 8'h60
     } dmni_mmr_t;
 
     typedef struct packed {

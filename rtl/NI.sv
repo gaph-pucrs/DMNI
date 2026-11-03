@@ -21,6 +21,7 @@ module NI
     parameter              TASKS_PER_PE     = 1,
     parameter              IMEM_PAGE_SZ     = 32768,
     parameter              DMEM_PAGE_SZ     = 32768,
+    parameter logic [15:0] OSZ_WINDOW       = 16'h0000,
     parameter logic [15:0] ADDRESS          = 16'b0
 )
 (
@@ -118,6 +119,7 @@ module NI
             DMNI_MANYCORE_SZ:      cfg_data = {16'(TASKS_PER_PE), 8'(N_PE_X), 8'(N_PE_Y)};
             DMNI_IMEM_PAGE_SZ:     cfg_data = 32'(IMEM_PAGE_SZ);
             DMNI_DMEM_PAGE_SZ:     cfg_data = 32'(DMEM_PAGE_SZ);
+            DMNI_OSZ_WINDOW:       cfg_data = {16'h0000, OSZ_WINDOW};    /* 0xXXYY size at 0,0; 0 = disabled */
 
             /* Hermes */
             DMNI_HERMES_SIZE:      cfg_data = hermes_size_o;

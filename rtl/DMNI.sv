@@ -24,6 +24,7 @@ module DMNI
     parameter              TASKS_PER_PE       = 1,
     parameter              IMEM_PAGE_SZ       = 32768,
     parameter              DMEM_PAGE_SZ       = 32768,
+    parameter logic [15:0] OSZ_WINDOW         = 16'h0000,
     parameter logic [15:0] ADDRESS            = 16'b0
 )
 (
@@ -224,6 +225,7 @@ module DMNI
         .TASKS_PER_PE     (TASKS_PER_PE    ),
         .IMEM_PAGE_SZ     (IMEM_PAGE_SZ    ),
         .DMEM_PAGE_SZ     (DMEM_PAGE_SZ    ),
+        .OSZ_WINDOW       (OSZ_WINDOW      ),
         .ADDRESS          (ADDRESS         )
     )
     ni (
