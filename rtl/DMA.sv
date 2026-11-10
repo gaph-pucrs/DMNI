@@ -40,6 +40,7 @@ module DMA
     output logic                     [31:0] mem_addr_o,
     input  logic                     [31:0] mem_data_i,
     output logic                     [31:0] mem_data_o,
+    input  logic                            mem_stall_i,    /* Memory lost this cycle: a request made now is not accepted */
 
     /* Configuration interface */
     input  logic                            hermes_st_rcv_i,
@@ -125,8 +126,12 @@ module DMA
         can_receive = (
             noc_rx_i 
             && current_arbit == ARBIT_RECEIVE
+            && !mem_stall_i
         );
     end
+
+    logic can_monitor;
+    assign can_monitor = noc_rx_i && current_arbit == ARBIT_MONITOR && !mem_stall_i;
 
     logic [31:0] hermes_receive_addr;
     logic [31:0] hermes_receive_size;
@@ -185,7 +190,8 @@ module DMA
                 end
             end
             HERMES_RECEIVE_EOP:
-                hermes_receive_next_state = (noc_rx_i && noc_eop_i)
+                /* The monitor FSM may be stalled with the EOP flit still in the buffer */
+                hermes_receive_next_state = (noc_rx_i && noc_eop_i && noc_credit_o)
                     ? HERMES_RECEIVE_HEADER
                     : HERMES_RECEIVE_EOP;
             HERMES_RECEIVE_LOOPBACK_HEADER: begin
@@ -262,7 +268,7 @@ module DMA
         else begin
             if (hermes_monitor_state == HERMES_MONITOR_AVAILABLE)
                 monitor_cnt <= '0;
-            else if (hermes_monitor_active_o && noc_rx_i && current_arbit == ARBIT_MONITOR)
+            else if (hermes_monitor_active_o && can_monitor)
                 monitor_cnt <= monitor_cnt + 1'b1;
         end
     end
@@ -285,9 +291,9 @@ module DMA
                     ? HERMES_MONITOR_RECEIVE
                     : HERMES_MONITOR_DROP;
             HERMES_MONITOR_RECEIVE: begin
-                if (noc_rx_i && current_arbit == ARBIT_MONITOR && noc_eop_i)
+                if (can_monitor && noc_eop_i)
                     hermes_monitor_next_state = HERMES_MONITOR_OCCUPIED;
-                else if (noc_rx_i && current_arbit == ARBIT_MONITOR && (monitor_cnt == (hermes_monitor_flits_i - 1'b1)))
+                else if (can_monitor && (monitor_cnt == (hermes_monitor_flits_i - 1'b1)))
                     hermes_monitor_next_state = HERMES_MONITOR_DROP_OCC;
                 else
                     hermes_monitor_next_state = HERMES_MONITOR_RECEIVE;
@@ -335,7 +341,7 @@ module DMA
             else if (hermes_monitor_state == HERMES_MONITOR_AVAILABLE) begin
                 hermes_monitor_addr <= hermes_monitor_addr_i + 32'(hermes_monitor_offset);
             end
-            else if (noc_rx_i && hermes_monitor_active_o && hermes_monitor_addr != '0 && current_arbit == ARBIT_MONITOR) begin
+            else if (can_monitor && hermes_monitor_active_o && hermes_monitor_addr != '0) begin
                 hermes_monitor_addr   <= hermes_monitor_addr   + 32'h00000004;
                 hermes_monitor_offset <= hermes_monitor_offset + 16'h0004;
                 if (noc_eop_i)
@@ -388,6 +394,7 @@ module DMA
         hermes_send_state == HERMES_SEND_DATA
         && current_arbit == ARBIT_SEND
         && (!skid_tx || noc_ack_i)
+        && !mem_stall_i
     );
 
     logic send_read_last;
@@ -545,7 +552,9 @@ module DMA
             timer <= '0;
         end
         else begin
-            timer <= timer - 1'b1;
+            /* A stalled cycle does not count against the time slice */
+            if (!mem_stall_i)
+                timer <= timer - 1'b1;
             if (arbit_pending[current_arbit] == 1'b0)
                 timer <= '1;
         end
@@ -558,7 +567,7 @@ module DMA
         else begin
             if (arbit_pending == '0)
                 current_arbit <= ARBIT_NONE;
-            else if ((timer == '0 && current_arbit != ARBIT_MONITOR) || arbit_pending[current_arbit] == 1'b0)
+            else if ((timer == '0 && !mem_stall_i && current_arbit != ARBIT_MONITOR) || arbit_pending[current_arbit] == 1'b0)
                 current_arbit <= arbit_rr;
         end
     end
@@ -612,9 +621,9 @@ module DMA
 
     assign mem_data_o   = noc_data_i;
     assign noc_credit_o = (
-           (hermes_receive_active_o && current_arbit == ARBIT_RECEIVE) 
+           (hermes_receive_active_o && current_arbit == ARBIT_RECEIVE && !mem_stall_i) 
         || (hermes_monitor_state inside {HERMES_MONITOR_AVAILABLE, HERMES_MONITOR_DROP, HERMES_MONITOR_DROP_OCC})
-        || (hermes_monitor_active_o && current_arbit == ARBIT_MONITOR)
+        || (hermes_monitor_active_o && current_arbit == ARBIT_MONITOR && !mem_stall_i)
         || loopback_drop_header
         || loopback_xfer
     );

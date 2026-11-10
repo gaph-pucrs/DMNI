@@ -28,8 +28,7 @@ package DMNIPkg;
 
         DMNI_ADDRESS            = 8'h10,
         DMNI_MANYCORE_SZ        = 8'h14,
-        DMNI_IMEM_PAGE_SZ       = 8'h18,
-        DMNI_DMEM_PAGE_SZ       = 8'h1C,
+        DMNI_PAGE_SZ            = 8'h18,
 
         DMNI_HEAD               = 8'h20,
         DMNI_RECD_CNT           = 8'h24,

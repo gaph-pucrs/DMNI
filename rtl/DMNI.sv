@@ -22,8 +22,7 @@ module DMNI
     parameter              N_PE_X             = 2,
     parameter              N_PE_Y             = 2,
     parameter              TASKS_PER_PE       = 1,
-    parameter              IMEM_PAGE_SZ       = 32768,
-    parameter              DMEM_PAGE_SZ       = 32768,
+    parameter              PAGE_SZ            = 32768,
     parameter logic [15:0] ADDRESS            = 16'b0
 )
 (
@@ -48,6 +47,7 @@ module DMNI
     output logic        [31:0]                          mem_addr_o,
     input  logic        [31:0]                          mem_data_i,
     output logic        [31:0]                          mem_data_o,
+    input  logic                                        mem_stall_i,
 
     /* Hermes input interface */
     input  logic                                        noc_rx_i,
@@ -171,6 +171,7 @@ module DMNI
         .mem_addr_o                       (mem_addr_o                    ),
         .mem_data_i                       (mem_data_i                    ),
         .mem_data_o                       (mem_data_o                    ),
+        .mem_stall_i                      (mem_stall_i                   ),
         .hermes_st_rcv_i                  (hermes_st_rcv                 ),
         .hermes_st_snd_i                  (hermes_st_snd                 ),
         .hermes_size_i                    (hermes_size                   ),
@@ -222,8 +223,7 @@ module DMNI
         .N_PE_X           (N_PE_X          ),
         .N_PE_Y           (N_PE_Y          ),
         .TASKS_PER_PE     (TASKS_PER_PE    ),
-        .IMEM_PAGE_SZ     (IMEM_PAGE_SZ    ),
-        .DMEM_PAGE_SZ     (DMEM_PAGE_SZ    ),
+        .PAGE_SZ          (PAGE_SZ         ),
         .ADDRESS          (ADDRESS         )
     )
     ni (
