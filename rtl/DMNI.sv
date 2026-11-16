@@ -31,23 +31,28 @@ module DMNI
 
     input  logic        [31:0]                          tick_counter_i,
 
-    /* CPU interface (MMR) */
+    /* CPU interface (MMR): OBI subordinate */
     output logic                                        irq_o,
-    input  logic                                        cfg_en_i,
-    input  logic        [3:0]                           cfg_we_i,
+    input  logic                                        cfg_req_i,
+    output logic                                        cfg_gnt_o,
     input  logic        [7:0]                           cfg_addr_i,
-    input  logic        [31:0]                          cfg_data_i,
-    output logic        [31:0]                          cfg_data_o,
+    input  logic                                        cfg_we_i,
+    input  logic        [3:0]                           cfg_be_i,
+    input  logic        [31:0]                          cfg_wdata_i,
+    output logic                                        cfg_rvalid_o,
+    output logic        [31:0]                          cfg_rdata_o,
 
     output logic                                        release_peripheral_o,
 
-    /* Memory interface */
-    output logic                                        mem_en_o,
-    output logic        [ 3:0]                          mem_we_o,
+    /* OBI memory interface */
+    output logic                                        mem_req_o,
+    input  logic                                        mem_gnt_i,
     output logic        [31:0]                          mem_addr_o,
-    input  logic        [31:0]                          mem_data_i,
-    output logic        [31:0]                          mem_data_o,
-    input  logic                                        mem_stall_i,
+    output logic                                        mem_we_o,
+    output logic        [ 3:0]                          mem_be_o,
+    output logic        [31:0]                          mem_wdata_o,
+    input  logic                                        mem_rvalid_i,
+    input  logic        [31:0]                          mem_rdata_i,
 
     /* Hermes input interface */
     input  logic                                        noc_rx_i,
@@ -76,6 +81,7 @@ module DMNI
     /* verilator lint_off UNUSEDSIGNAL */
     logic almost_full;
     logic almost_empty;
+    logic [$clog2(HERMES_BUFFER_SIZE + 1) - 1:0] hermes_buffer_count;
     /* verilator lint_on UNUSEDSIGNAL */
 
     logic                            hermes_buffer_tx;
@@ -97,6 +103,7 @@ module DMNI
         .tx_o          (hermes_buffer_tx                       ),
         .tx_ack_i      (hermes_buffer_ack                      ),
         .data_o        ({hermes_buffer_eop, hermes_buffer_data}),
+        .count_o       (hermes_buffer_count                    ),
         .almost_full_o (almost_full                            ),
         .almost_empty_o(almost_empty                           )
     );
@@ -118,16 +125,19 @@ module DMNI
     assign hermes_buffer_eop_acked = noc_rx_i         && noc_credit_o      && noc_eop_i;
     assign dmni_buffer_eop_acked   = hermes_buffer_tx && hermes_buffer_ack && hermes_buffer_eop;
 
+    localparam int TIMESTAMP_BUFFER_SIZE = (HERMES_BUFFER_SIZE/4 < 2) ? 2 : HERMES_BUFFER_SIZE/4;
+
     /* verilator lint_off UNUSEDSIGNAL */
     logic timestamp_ack;
     logic timestamp_tx;
     logic timestamp_almost_full;
     logic timestamp_almost_empty;
+    logic [$clog2(TIMESTAMP_BUFFER_SIZE + 1) - 1:0] timestamp_count;
     /* verilator lint_on UNUSEDSIGNAL */
 
     RingBuffer #(
-        .DATA_SIZE   (32                                                  ),
-        .BUFFER_SIZE (HERMES_BUFFER_SIZE/4 < 2  ? 2 : HERMES_BUFFER_SIZE/4)
+        .DATA_SIZE   (32                   ),
+        .BUFFER_SIZE (TIMESTAMP_BUFFER_SIZE)
     )
     timestamp_buffer (
         .clk_i         (clk_i                  ),
@@ -139,6 +149,7 @@ module DMNI
         .tx_o          (timestamp_tx           ),
         .tx_ack_i      (dmni_buffer_eop_acked  ),
         .data_o        (rcv_timestamp          ),
+        .count_o       (timestamp_count        ),
         .almost_full_o (timestamp_almost_full  ),
         .almost_empty_o(timestamp_almost_empty )
     );
@@ -166,12 +177,14 @@ module DMNI
         .noc_eop_o                        (noc_eop_o                     ),
         .noc_ack_i                        (noc_credit_i                  ),
         .noc_data_o                       (noc_data_o                    ),
-        .mem_en_o                         (mem_en_o                      ),
-        .mem_we_o                         (mem_we_o                      ),
+        .mem_req_o                        (mem_req_o                     ),
+        .mem_gnt_i                        (mem_gnt_i                     ),
         .mem_addr_o                       (mem_addr_o                    ),
-        .mem_data_i                       (mem_data_i                    ),
-        .mem_data_o                       (mem_data_o                    ),
-        .mem_stall_i                      (mem_stall_i                   ),
+        .mem_we_o                         (mem_we_o                      ),
+        .mem_be_o                         (mem_be_o                      ),
+        .mem_wdata_o                      (mem_wdata_o                   ),
+        .mem_rvalid_i                     (mem_rvalid_i                  ),
+        .mem_rdata_i                      (mem_rdata_i                   ),
         .hermes_st_rcv_i                  (hermes_st_rcv                 ),
         .hermes_st_snd_i                  (hermes_st_snd                 ),
         .hermes_size_i                    (hermes_size                   ),
@@ -195,6 +208,7 @@ module DMNI
     /* verilator lint_off UNUSEDSIGNAL */
     logic br_almost_full;
     logic br_almost_empty;
+    logic [$clog2(BR_BUFFER_SIZE + 1) - 1:0] br_count;
     /* verilator lint_on UNUSEDSIGNAL */
 
     logic        br_buffer_tx;
@@ -215,6 +229,7 @@ module DMNI
         .tx_o          (br_buffer_tx   ),
         .tx_ack_i      (br_buffer_ack  ),
         .data_o        (br_buffer_data ),
+        .count_o       (br_count       ),
         .almost_full_o (br_almost_full ),
         .almost_empty_o(br_almost_empty)
     );
@@ -232,11 +247,14 @@ module DMNI
         .dmni_buffer_eop_acked_i          (dmni_buffer_eop_acked         ),
         .rcv_timestamp_i                  (rcv_timestamp                 ),
         .irq_o                            (irq_o                         ),
-        .cfg_en_i                         (cfg_en_i                      ),
-        .cfg_we_i                         (cfg_we_i                      ),
+        .cfg_req_i                        (cfg_req_i                     ),
+        .cfg_gnt_o                        (cfg_gnt_o                     ),
         .cfg_addr_i                       (cfg_addr_i                    ),
-        .cfg_data_i                       (cfg_data_i                    ),
-        .cfg_data_o                       (cfg_data_o                    ),
+        .cfg_we_i                         (cfg_we_i                      ),
+        .cfg_be_i                         (cfg_be_i                      ),
+        .cfg_wdata_i                      (cfg_wdata_i                   ),
+        .cfg_rvalid_o                     (cfg_rvalid_o                  ),
+        .cfg_rdata_o                      (cfg_rdata_o                   ),
         .release_peripheral_o             (release_peripheral_o          ),
         .hermes_send_active_i             (hermes_send_active            ),
         .hermes_receive_active_i          (hermes_receive_active         ),

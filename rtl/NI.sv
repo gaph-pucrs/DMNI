@@ -31,11 +31,15 @@ module NI
 
     /* CPU Interface */
     output logic               irq_o,
-    input  logic               cfg_en_i,
-    input  logic         [3:0] cfg_we_i,
+    /* OBI subordinate: always granted, answers in the next cycle */
+    input  logic               cfg_req_i,
+    output logic               cfg_gnt_o,
     input  logic         [7:0] cfg_addr_i,
-    input  logic        [31:0] cfg_data_i,
-    output logic        [31:0] cfg_data_o,
+    input  logic               cfg_we_i,
+    input  logic         [3:0] cfg_be_i,
+    input  logic        [31:0] cfg_wdata_i,
+    output logic               cfg_rvalid_o,
+    output logic        [31:0] cfg_rdata_o,
 
     output logic               release_peripheral_o,
 
@@ -103,12 +107,36 @@ module NI
     logic [7:0] ip;
     assign ip = {3'b000, (mon_sem_oc_i != '0), pending_svc, br_rx_i, hermes_receive_available_i, 1'b0};
 
+    /* A start is busy from the cycle it is written: a read right behind it must not see idle */
+    logic hermes_receive_busy;
+    logic hermes_send_busy;
+    assign hermes_receive_busy = hermes_receive_active_i || hermes_st_rcv_o;
+    assign hermes_send_busy    = hermes_send_active_i    || hermes_st_snd_o;
+
+    assign cfg_gnt_o = 1'b1;
+
+    logic cfg_read;
+    logic cfg_write;
+    assign cfg_read  = cfg_req_i && !cfg_we_i;
+    assign cfg_write = cfg_req_i &&  cfg_we_i;
+
+    /* The control bits live in the lowest byte */
+    logic cfg_write_low;
+    assign cfg_write_low = cfg_write && cfg_be_i[0];
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            cfg_rvalid_o <= 1'b0;
+        else
+            cfg_rvalid_o <= cfg_req_i;
+    end
+
     logic [31:0] cfg_data;
 
     always_comb begin
         case (cfg_addr_i)
             /* IRQ */
-            DMNI_STATUS:           cfg_data = {24'h000000, mon_active_i, br_local_busy_i, hermes_receive_active_i, hermes_send_active_i, release_peripheral_o, 1'b0, 1'b0, 1'b0};
+            DMNI_STATUS:           cfg_data = {24'h000000, mon_active_i, br_local_busy_i, hermes_receive_busy, hermes_send_busy, release_peripheral_o, 1'b0, 1'b0, 1'b0};
             DMNI_IRQ_ENABLE:       cfg_data = {24'h000000, ie};
             DMNI_IRQ_PENDING:      cfg_data = {24'h000000, ip};
 
@@ -144,16 +172,16 @@ module NI
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
-            cfg_data_o <= '0;
-        else if (cfg_en_i && (cfg_we_i == '0))
-            cfg_data_o <= cfg_data;
+            cfg_rdata_o <= '0;
+        else if (cfg_read)
+            cfg_rdata_o <= cfg_data;
     end
     
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             release_peripheral_o <= 1'b0;
-        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
-            release_peripheral_o <= cfg_data_i[3];
+        else if (cfg_write_low && cfg_addr_i == DMNI_STATUS)
+            release_peripheral_o <= cfg_wdata_i[3];
     end
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -163,36 +191,36 @@ module NI
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             hermes_ie <= 1'b0;
-        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
-            hermes_ie <= cfg_data_i[1];
+        else if (cfg_write_low && cfg_addr_i == DMNI_IRQ_ENABLE)
+            hermes_ie <= cfg_wdata_i[1];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             brlite_ie <= 1'b0;
-        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
-            brlite_ie <= cfg_data_i[2];
+        else if (cfg_write_low && cfg_addr_i == DMNI_IRQ_ENABLE)
+            brlite_ie <= cfg_wdata_i[2];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             pending_ie <= 1'b0;
-        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
-            pending_ie <= cfg_data_i[3];
+        else if (cfg_write_low && cfg_addr_i == DMNI_IRQ_ENABLE)
+            pending_ie <= cfg_wdata_i[3];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             monitor_ie <= 1'b0;
-        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_ENABLE)
-            monitor_ie <= cfg_data_i[4];
+        else if (cfg_write_low && cfg_addr_i == DMNI_IRQ_ENABLE)
+            monitor_ie <= cfg_wdata_i[4];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni)
             pending_svc <= 1'b0;
-        else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_IRQ_PENDING)
-            pending_svc <= cfg_data_i[3];
+        else if (cfg_write_low && cfg_addr_i == DMNI_IRQ_PENDING)
+            pending_svc <= cfg_wdata_i[3];
     end
 
     logic [7:0] irq;
@@ -209,8 +237,8 @@ module NI
             hermes_st_snd_o <= 1'b0;
         end
         else begin
-            if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
-                hermes_st_snd_o <= cfg_data_i[0];
+            if (cfg_write_low && cfg_addr_i == DMNI_STATUS)
+                hermes_st_snd_o <= cfg_wdata_i[0];
 
             if (hermes_st_snd_o)
                 hermes_st_snd_o <= 1'b0; 
@@ -222,8 +250,8 @@ module NI
             hermes_st_rcv_o <= 1'b0;
         end
         else begin 
-            if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
-                hermes_st_rcv_o <= cfg_data_i[1];
+            if (cfg_write_low && cfg_addr_i == DMNI_STATUS)
+                hermes_st_rcv_o <= cfg_wdata_i[1];
             
             if (hermes_st_rcv_o)
                 hermes_st_rcv_o <= 1'b0; 
@@ -232,10 +260,10 @@ module NI
 
     logic [31:0] w_data;
     always_comb begin
-        w_data[31:24] = cfg_we_i[3] ? cfg_data_i[31:24] : cfg_data[31:24];
-        w_data[23:16] = cfg_we_i[2] ? cfg_data_i[23:16] : cfg_data[23:16];
-        w_data[15: 8] = cfg_we_i[1] ? cfg_data_i[15: 8] : cfg_data[15: 8];
-        w_data[ 7: 0] = cfg_we_i[0] ? cfg_data_i[ 7: 0] : cfg_data[ 7: 0];
+        w_data[31:24] = cfg_be_i[3] ? cfg_wdata_i[31:24] : cfg_data[31:24];
+        w_data[23:16] = cfg_be_i[2] ? cfg_wdata_i[23:16] : cfg_data[23:16];
+        w_data[15: 8] = cfg_be_i[1] ? cfg_wdata_i[15: 8] : cfg_data[15: 8];
+        w_data[ 7: 0] = cfg_be_i[0] ? cfg_wdata_i[ 7: 0] : cfg_data[ 7: 0];
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -246,7 +274,7 @@ module NI
             hermes_size_2_o    <= '0;
         end
         else begin
-            if (cfg_en_i && (cfg_we_i != '0)) begin
+            if (cfg_write) begin
                 case (cfg_addr_i)
                     DMNI_HERMES_SIZE:      hermes_size_o      <= w_data;
                     DMNI_HERMES_SIZE_2:    hermes_size_2_o    <= w_data;
@@ -270,7 +298,7 @@ module NI
         else begin
             if (br_ack_i)
                 br_req_o <= 1'b0;
-            else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_BR_KSVC)
+            else if (cfg_write_low && cfg_addr_i == DMNI_BR_KSVC)
                 br_req_o <= 1'b1;
         end
     end
@@ -280,16 +308,16 @@ module NI
         if (!rst_ni) begin
             br_data_o <= '0;
         end
-        else if (cfg_en_i) begin
-            if (cfg_addr_i == DMNI_BR_KSVC && cfg_we_i[0])
-                br_data_o.ksvc <= cfg_data_i[3:0];
+        else if (cfg_write) begin
+            if (cfg_addr_i == DMNI_BR_KSVC && cfg_be_i[0])
+                br_data_o.ksvc <= cfg_wdata_i[3:0];
 
             if (cfg_addr_i == DMNI_BR_PAYLOAD) begin
-                if (cfg_we_i[0])
-                    br_data_o.payload[7:0] <= cfg_data_i[7:0];
+                if (cfg_be_i[0])
+                    br_data_o.payload[7:0] <= cfg_wdata_i[7:0];
 
-                if (cfg_we_i[1])
-                    br_data_o.payload[15:8] <= cfg_data_i[15:8];
+                if (cfg_be_i[1])
+                    br_data_o.payload[15:8] <= cfg_wdata_i[15:8];
             end
         end
     end
@@ -306,7 +334,7 @@ module NI
         else begin
             if (br_ack_o)
                 br_ack_o <= 1'b0;
-            else if (cfg_en_i && (cfg_we_i == '0) && cfg_addr_i == DMNI_BR_KSVC)
+            else if (cfg_read && cfg_addr_i == DMNI_BR_KSVC)
                 br_ack_o <= 1'b1;
         end
     end
@@ -322,7 +350,7 @@ module NI
         else begin
             mon_sem_av_post_o <= 1'b0;
 
-            if (cfg_en_i && cfg_addr_i == DMNI_MON_SEM_AV && cfg_we_i != '0 && w_data == 32'hFFFFFFFF)
+            if (cfg_write && cfg_addr_i == DMNI_MON_SEM_AV && w_data == 32'hFFFFFFFF)
                 mon_sem_av_post_o <= 1'b1;
         end
     end
@@ -332,7 +360,7 @@ module NI
             mon_sem_av_o <= '0;
         end
         else begin
-            if (cfg_en_i && cfg_addr_i == DMNI_MON_SEM_AV && cfg_we_i != '0 && w_data != 32'hFFFFFFFF)
+            if (cfg_write && cfg_addr_i == DMNI_MON_SEM_AV && w_data != 32'hFFFFFFFF)
                 mon_sem_av_o <= w_data[7:0];
         end
     end
@@ -344,7 +372,7 @@ module NI
         else begin
             mon_sem_oc_wait_o <= 1'b0;
 
-            if (cfg_en_i && cfg_addr_i == DMNI_MON_SEM_OC && cfg_we_i != '0 && w_data == 32'hFFFFFFFF)
+            if (cfg_write && cfg_addr_i == DMNI_MON_SEM_OC && w_data == 32'hFFFFFFFF)
                 mon_sem_oc_wait_o <= 1'b1;
         end
     end
@@ -354,7 +382,7 @@ module NI
             mon_flits_o <= '0;
         end
         else begin
-            if (cfg_en_i && cfg_addr_i == DMNI_MON_FLITS && cfg_we_i != '0)
+            if (cfg_write && cfg_addr_i == DMNI_MON_FLITS)
                 mon_flits_o <= w_data[7:0];
         end
     end
@@ -364,7 +392,7 @@ module NI
             mon_addr_o <= '0;
         end
         else begin
-            if (cfg_en_i && cfg_addr_i == DMNI_MON_BASE && cfg_we_i != '0)
+            if (cfg_write && cfg_addr_i == DMNI_MON_BASE)
                 mon_addr_o <= w_data;
         end
     end
@@ -377,12 +405,11 @@ module NI
             mon_reset_o <= 1'b0;
 
             if (
-                cfg_en_i
+                cfg_write
                 && (
                        (cfg_addr_i inside {DMNI_MON_BASE, DMNI_MON_FLITS})
                     || ((cfg_addr_i inside {DMNI_MON_SEM_OC, DMNI_MON_SEM_AV}) && w_data != 32'hFFFFFFFF)
                 )
-                && cfg_we_i != '0
             )
                 mon_reset_o <= 1'b1;
         end

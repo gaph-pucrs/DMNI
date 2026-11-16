@@ -16,7 +16,8 @@
 module DMA
     import DMNIPkg::*;
 #(
-    parameter HERMES_FLIT_SIZE = 32
+    parameter HERMES_FLIT_SIZE = 32,
+    parameter MEM_OUTSTANDING  = 4      /* Power of 2: memory transactions in flight, and send flits buffered */
 )
 (
     input  logic                            clk_i,
@@ -34,13 +35,15 @@ module DMA
     input  logic                            noc_ack_i,
     output logic [(HERMES_FLIT_SIZE - 1):0] noc_data_o,
 
-    /* Memory interface */
-    output logic                            mem_en_o,
-    output logic                     [ 3:0] mem_we_o,
+    /* OBI memory interface */
+    output logic                            mem_req_o,
+    input  logic                            mem_gnt_i,
     output logic                     [31:0] mem_addr_o,
-    input  logic                     [31:0] mem_data_i,
-    output logic                     [31:0] mem_data_o,
-    input  logic                            mem_stall_i,    /* Memory lost this cycle: a request made now is not accepted */
+    output logic                            mem_we_o,
+    output logic                     [ 3:0] mem_be_o,
+    output logic                     [31:0] mem_wdata_o,
+    input  logic                            mem_rvalid_i,
+    input  logic                     [31:0] mem_rdata_i,
 
     /* Configuration interface */
     input  logic                            hermes_st_rcv_i,
@@ -82,6 +85,16 @@ module DMA
 
     hermes_send_t hermes_send_state;
 
+    /**
+     * OBI: a request holds until gnt. Every source below keeps its request
+     * and address stable while waiting, and the arbiter does not switch.
+     */
+    logic mem_accept;
+    assign mem_accept = mem_req_o && mem_gnt_i;
+
+    /* Room to track one more response */
+    logic rsp_room;
+
 ////////////////////////////////////////////////////////////////////////////////
 // NoC Receive FSM
 ////////////////////////////////////////////////////////////////////////////////
@@ -121,20 +134,27 @@ module DMA
     logic loopback_eop_ack;     /* the last flit of a looped packet left the input buffer */
     assign loopback_eop_ack = noc_eop_i && (loopback_xfer || loopback_drop_header);
 
-    logic can_receive;
-    always_comb begin
-        can_receive = (
-            noc_rx_i 
-            && current_arbit == ARBIT_RECEIVE
-            && !mem_stall_i
-        );
-    end
-
-    logic can_monitor;
-    assign can_monitor = noc_rx_i && current_arbit == ARBIT_MONITOR && !mem_stall_i;
-
     logic [31:0] hermes_receive_addr;
     logic [31:0] hermes_receive_size;
+
+    /* Without an address the flits are dropped, with no memory write */
+    logic receive_req;
+    assign receive_req = (
+        noc_rx_i
+        && hermes_receive_active_o
+        && current_arbit == ARBIT_RECEIVE
+        && hermes_receive_addr != '0
+        && rsp_room
+    );
+
+    /* A flit consumed by the Receive FSM */
+    logic can_receive;
+    assign can_receive = (
+        noc_rx_i
+        && hermes_receive_active_o
+        && current_arbit == ARBIT_RECEIVE
+        && (hermes_receive_addr == '0 || mem_accept)
+    );
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             hermes_receive_addr     <= '0;
@@ -145,7 +165,7 @@ module DMA
                 hermes_receive_addr     <= hermes_address_i;
                 hermes_receive_size     <= hermes_size_i;
             end
-            else if (can_receive && hermes_receive_active_o && hermes_receive_addr != '0) begin
+            else if (can_receive && hermes_receive_addr != '0) begin
                 hermes_receive_addr <= hermes_receive_addr + 32'h4;
                 hermes_receive_size <= hermes_receive_size - 32'b1;
             end
@@ -268,7 +288,7 @@ module DMA
         else begin
             if (hermes_monitor_state == HERMES_MONITOR_AVAILABLE)
                 monitor_cnt <= '0;
-            else if (hermes_monitor_active_o && can_monitor)
+            else if (can_monitor)
                 monitor_cnt <= monitor_cnt + 1'b1;
         end
     end
@@ -325,6 +345,24 @@ module DMA
     logic [ 7:0] hermes_monitor_index;
     logic [15:0] hermes_monitor_offset;
     logic [31:0] hermes_monitor_addr;
+
+    logic monitor_req;
+    assign monitor_req = (
+        noc_rx_i
+        && hermes_monitor_active_o
+        && current_arbit == ARBIT_MONITOR
+        && hermes_monitor_addr != '0
+        && rsp_room
+    );
+
+    /* A flit consumed by the Monitor FSM */
+    logic can_monitor;
+    assign can_monitor = (
+        noc_rx_i
+        && hermes_monitor_active_o
+        && current_arbit == ARBIT_MONITOR
+        && (hermes_monitor_addr == '0 || mem_accept)
+    );
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             hermes_monitor_addr   <= '0;
@@ -341,7 +379,7 @@ module DMA
             else if (hermes_monitor_state == HERMES_MONITOR_AVAILABLE) begin
                 hermes_monitor_addr <= hermes_monitor_addr_i + 32'(hermes_monitor_offset);
             end
-            else if (can_monitor && hermes_monitor_active_o && hermes_monitor_addr != '0) begin
+            else if (can_monitor && hermes_monitor_addr != '0) begin
                 hermes_monitor_addr   <= hermes_monitor_addr   + 32'h00000004;
                 hermes_monitor_offset <= hermes_monitor_offset + 16'h0004;
                 if (noc_eop_i)
@@ -381,21 +419,27 @@ module DMA
     logic [31:0] hermes_send_size;
     logic [31:0] hermes_send_size_2;
 
-    logic                            skid_tx;
-    logic                            skid_eop;
-    logic [(HERMES_FLIT_SIZE - 1):0] skid_data;
+    logic                            send_tx;
+    logic                            send_eop;
+    logic [(HERMES_FLIT_SIZE - 1):0] send_data;
 
-    /**
-     * Memory reads take one cycle, so a word is always in flight.
-     * Only read when the word on the link will be gone when the new one arrives.
-     */
-    logic send_read;
-    assign send_read = (
+    /* Flits read or being read and not sent yet: they all fit the send buffer */
+    localparam int SEND_CNT_W = $clog2(MEM_OUTSTANDING + 1);
+    logic [SEND_CNT_W - 1:0] send_count;
+
+    logic send_room;
+    assign send_room = (send_count != SEND_CNT_W'(MEM_OUTSTANDING));
+
+    logic send_req;
+    assign send_req = (
         hermes_send_state == HERMES_SEND_DATA
         && current_arbit == ARBIT_SEND
-        && (!skid_tx || noc_ack_i)
-        && !mem_stall_i
+        && send_room
+        && rsp_room
     );
+
+    logic send_read;
+    assign send_read = current_arbit == ARBIT_SEND && mem_accept;
 
     logic send_read_last;
     assign send_read_last = send_read && (
@@ -403,45 +447,80 @@ module DMA
         (hermes_send_size == '0    && hermes_send_size_2 == 32'b1)
     );
 
-    logic send_read_r;
-    logic send_read_last_r;
+    logic send_pop;
+    assign send_pop = send_tx && noc_ack_i;
+
     always_ff @(posedge clk_i or negedge rst_ni) begin
-        if (!rst_ni) begin
-            send_read_r      <= 1'b0;
-            send_read_last_r <= 1'b0;
-        end
-        else begin
-            send_read_r      <= send_read;
-            send_read_last_r <= send_read_last;
-        end
+        if (!rst_ni)
+            send_count <= '0;
+        else
+            send_count <= send_count + SEND_CNT_W'(send_read) - SEND_CNT_W'(send_pop);
     end
 
-    /* Skid buffer: holds the in-flight word when the credit drops */
+    /* Responses come in order: remember which ones carry a flit to send */
+    logic rsp_send;
+    logic rsp_last;
+
     /* verilator lint_off UNUSEDSIGNAL */
-    logic skid_rx_ack;
-    logic skid_almost_full;
-    logic skid_almost_empty;
+    logic rsp_tx;
+    logic rsp_almost_full;
+    logic rsp_almost_empty;
+    logic [$clog2(MEM_OUTSTANDING + 1) - 1:0] rsp_count;
+    /* verilator lint_on UNUSEDSIGNAL */
+
+    RingBuffer #(
+        .DATA_SIZE              (2              ),
+        .BUFFER_SIZE            (MEM_OUTSTANDING),
+        .FIRST_WORD_FALL_THROUGH(0              ),
+        .ALMOST_FULL_THRESHOLD  (0              ),
+        .ALMOST_EMPTY_THRESHOLD (0              )
+    )
+    rsp_buffer (
+        .clk_i         (clk_i                    ),
+        .rst_ni        (rst_ni                   ),
+        .buf_rst_i     (1'b0                     ),
+        .rx_i          (mem_accept               ),
+        .rx_ack_o      (rsp_room                 ),
+        .data_i        ({send_read, send_read_last}),
+        .tx_o          (rsp_tx                   ),
+        .tx_ack_i      (mem_rvalid_i             ),
+        .data_o        ({rsp_send, rsp_last}     ),
+        .count_o       (rsp_count                ),
+        .almost_full_o (rsp_almost_full          ),
+        .almost_empty_o(rsp_almost_empty         )
+    );
+
+    logic send_rsp;
+    assign send_rsp = mem_rvalid_i && rsp_send;
+
+    /* Send buffer: read flits wait here for the link */
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic send_rx_ack;
+    logic send_almost_full;
+    logic send_almost_empty;
+    logic [SEND_CNT_W - 1:0] send_buffer_count;
     /* verilator lint_on UNUSEDSIGNAL */
 
     RingBuffer #(
         .DATA_SIZE              (HERMES_FLIT_SIZE + 1),
-        .BUFFER_SIZE            (1                   ),
+        .BUFFER_SIZE            (MEM_OUTSTANDING     ),
         .FIRST_WORD_FALL_THROUGH(1                   ),
         .ALMOST_FULL_THRESHOLD  (0                   ),
         .ALMOST_EMPTY_THRESHOLD (0                   )
     )
-    skid_buffer (
-        .clk_i         (clk_i                                                   ),
-        .rst_ni        (rst_ni                                                  ),
-        .buf_rst_i     (1'b0                                                    ),
-        .rx_i          (send_read_r                                             ),
-        .rx_ack_o      (skid_rx_ack                                             ),
-        .data_i        ({send_read_last_r, mem_data_i[(HERMES_FLIT_SIZE - 1):0]}),
-        .tx_o          (skid_tx                                                 ),
-        .tx_ack_i      (noc_ack_i                                               ),
-        .data_o        ({skid_eop, skid_data}                                   ),
-        .almost_full_o (skid_almost_full                                        ),
-        .almost_empty_o(skid_almost_empty                                       )
+    send_buffer (
+        .clk_i         (clk_i                                             ),
+        .rst_ni        (rst_ni                                            ),
+        .buf_rst_i     (1'b0                                              ),
+        .rx_i          (send_rsp                                          ),
+        .rx_ack_o      (send_rx_ack                                       ),
+        .data_i        ({rsp_last, mem_rdata_i[(HERMES_FLIT_SIZE - 1):0]}),
+        .tx_o          (send_tx                                           ),
+        .tx_ack_i      (noc_ack_i                                         ),
+        .data_o        ({send_eop, send_data}                             ),
+        .count_o       (send_buffer_count                                 ),
+        .almost_full_o (send_almost_full                                  ),
+        .almost_empty_o(send_almost_empty                                 )
     );
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -483,8 +562,8 @@ module DMA
                     ? HERMES_SEND_DRAIN
                     : HERMES_SEND_DATA;
             HERMES_SEND_DRAIN:
-                /* Wait for the last flit to leave the skid buffer */
-                hermes_send_next_state = (skid_tx && noc_ack_i && skid_eop)
+                /* Wait for the last flit to leave the send buffer */
+                hermes_send_next_state = (send_pop && send_eop)
                     ? HERMES_SEND_IDLE
                     : HERMES_SEND_DRAIN;
             default:
@@ -500,9 +579,9 @@ module DMA
     end
 
     /* During a loopback the input buffer drives the output link directly */
-    assign noc_tx_o   = loopback_data ? noc_rx_i   : skid_tx;
-    assign noc_eop_o  = loopback_data ? noc_eop_i  : skid_eop;
-    assign noc_data_o = loopback_data ? noc_data_i : skid_data;
+    assign noc_tx_o   = loopback_data ? noc_rx_i   : send_tx;
+    assign noc_eop_o  = loopback_data ? noc_eop_i  : send_eop;
+    assign noc_data_o = loopback_data ? noc_data_i : send_data;
     assign hermes_send_active_o = (hermes_send_state != HERMES_SEND_IDLE);
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -546,6 +625,10 @@ module DMA
         end
     end
 
+    /* A request waiting for gnt: OBI forbids changing it */
+    logic mem_wait;
+    assign mem_wait = mem_req_o && !mem_gnt_i;
+
     logic [2:0] timer;
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
@@ -553,7 +636,7 @@ module DMA
         end
         else begin
             /* A stalled cycle does not count against the time slice */
-            if (!mem_stall_i)
+            if (!mem_wait)
                 timer <= timer - 1'b1;
             if (arbit_pending[current_arbit] == 1'b0)
                 timer <= '1;
@@ -565,9 +648,11 @@ module DMA
             current_arbit <= ARBIT_NONE;
         end
         else begin
-            if (arbit_pending == '0)
+            if (mem_wait)
+                ;
+            else if (arbit_pending == '0)
                 current_arbit <= ARBIT_NONE;
-            else if ((timer == '0 && !mem_stall_i && current_arbit != ARBIT_MONITOR) || arbit_pending[current_arbit] == 1'b0)
+            else if ((timer == '0 && current_arbit != ARBIT_MONITOR) || arbit_pending[current_arbit] == 1'b0)
                 current_arbit <= arbit_rr;
         end
     end
@@ -578,52 +663,31 @@ module DMA
     
     always_comb begin
         case (current_arbit)
-            ARBIT_SEND:
-                mem_en_o = send_read;
-            ARBIT_RECEIVE:
-                mem_en_o = (
-                    hermes_receive_active_o 
-                    && hermes_receive_addr != '0
-                );
-            ARBIT_MONITOR:
-                mem_en_o = (
-                    hermes_monitor_active_o
-                    && hermes_monitor_addr != '0
-                );
-            default:
-                mem_en_o = 1'b0;
+            ARBIT_SEND:    mem_req_o = send_req;
+            ARBIT_RECEIVE: mem_req_o = receive_req;
+            ARBIT_MONITOR: mem_req_o = monitor_req;
+            default:       mem_req_o = 1'b0;
         endcase
     end
 
     always_comb begin
         case (current_arbit)
-            ARBIT_SEND:
-                mem_addr_o = (hermes_send_size != '0) ? hermes_send_addr : hermes_send_addr_2;
-            ARBIT_RECEIVE:
-                mem_addr_o = hermes_receive_addr;
-            ARBIT_MONITOR:
-                mem_addr_o = hermes_monitor_addr;
-            default: /* ARBIT_RECEIVE */
-                mem_addr_o = '0;
+            ARBIT_SEND:    mem_addr_o = (hermes_send_size != '0) ? hermes_send_addr : hermes_send_addr_2;
+            ARBIT_RECEIVE: mem_addr_o = hermes_receive_addr;
+            ARBIT_MONITOR: mem_addr_o = hermes_monitor_addr;
+            default:       mem_addr_o = '0;
         endcase
     end
 
-    always_comb begin
-        case (current_arbit)
-            ARBIT_RECEIVE:
-                mem_we_o = {4{hermes_receive_active_o}};
-            ARBIT_MONITOR:
-                mem_we_o = {4{hermes_monitor_active_o}};
-            default:    /* ARBIT_MONITOR */
-                mem_we_o = '0;
-        endcase
-    end
+    /* Receive and Monitor write whole flits, Send reads them */
+    assign mem_we_o    = (current_arbit inside {ARBIT_RECEIVE, ARBIT_MONITOR});
+    assign mem_be_o    = 4'hF;
+    assign mem_wdata_o = noc_data_i;
 
-    assign mem_data_o   = noc_data_i;
     assign noc_credit_o = (
-           (hermes_receive_active_o && current_arbit == ARBIT_RECEIVE && !mem_stall_i) 
+           can_receive
         || (hermes_monitor_state inside {HERMES_MONITOR_AVAILABLE, HERMES_MONITOR_DROP, HERMES_MONITOR_DROP_OCC})
-        || (hermes_monitor_active_o && current_arbit == ARBIT_MONITOR && !mem_stall_i)
+        || can_monitor
         || loopback_drop_header
         || loopback_xfer
     );
@@ -639,7 +703,7 @@ module DMA
         else begin
             if (hermes_st_rcv_i)
                 hermes_received_cnt_o <= '0;
-            else if (hermes_receive_active_o && can_receive)
+            else if (can_receive)
                 hermes_received_cnt_o <= hermes_received_cnt_o + HERMES_FLIT_SIZE/8;
         end
     end
