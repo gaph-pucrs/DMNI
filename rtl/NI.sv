@@ -21,6 +21,7 @@ module NI
     parameter              TASKS_PER_PE     = 1,
     parameter              IMEM_PAGE_SZ     = 32768,
     parameter              DMEM_PAGE_SZ     = 32768,
+    parameter logic [15:0] OSZ_WINDOW       = 16'h0000,
     parameter logic [15:0] ADDRESS          = 16'b0
 )
 (
@@ -39,6 +40,7 @@ module NI
     output logic        [31:0] cfg_data_o,
 
     output logic               release_peripheral_o,
+    output logic        [31:0] osz_block_o,          /* DMNI_OSZ_BLOCK, see DMNIPkg */
 
     /* Hermes MMRs */
     input  logic               hermes_send_active_i,
@@ -118,6 +120,8 @@ module NI
             DMNI_MANYCORE_SZ:      cfg_data = {16'(TASKS_PER_PE), 8'(N_PE_X), 8'(N_PE_Y)};
             DMNI_IMEM_PAGE_SZ:     cfg_data = 32'(IMEM_PAGE_SZ);
             DMNI_DMEM_PAGE_SZ:     cfg_data = 32'(DMEM_PAGE_SZ);
+            DMNI_OSZ_WINDOW:       cfg_data = {16'h0000, OSZ_WINDOW};    /* 0xXXYY size at 0,0; 0 = disabled */
+            DMNI_OSZ_BLOCK:        cfg_data = osz_block_o;
 
             /* Hermes */
             DMNI_HERMES_SIZE:      cfg_data = hermes_size_o;
@@ -156,6 +160,14 @@ module NI
             release_peripheral_o <= 1'b0;
         else if (cfg_en_i && cfg_we_i[0] && cfg_addr_i == DMNI_STATUS)
             release_peripheral_o <= cfg_data_i[3];
+    end
+
+    /* OSZ port closing: only whole-word writes, so the mask never changes in parts */
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni)
+            osz_block_o <= '0;
+        else if (cfg_en_i && cfg_we_i == 4'b1111 && cfg_addr_i == DMNI_OSZ_BLOCK)
+            osz_block_o <= cfg_data_i;
     end
 
 ////////////////////////////////////////////////////////////////////////////////

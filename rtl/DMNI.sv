@@ -24,6 +24,7 @@ module DMNI
     parameter              TASKS_PER_PE       = 1,
     parameter              IMEM_PAGE_SZ       = 32768,
     parameter              DMEM_PAGE_SZ       = 32768,
+    parameter logic [15:0] OSZ_WINDOW         = 16'h0000,
     parameter logic [15:0] ADDRESS            = 16'b0
 )
 (
@@ -41,6 +42,7 @@ module DMNI
     output logic        [31:0]                          cfg_data_o,
 
     output logic                                        release_peripheral_o,
+    output logic        [31:0]                          osz_block_o,
 
     /* Memory interface */
     output logic                                        mem_en_o,
@@ -224,6 +226,7 @@ module DMNI
         .TASKS_PER_PE     (TASKS_PER_PE    ),
         .IMEM_PAGE_SZ     (IMEM_PAGE_SZ    ),
         .DMEM_PAGE_SZ     (DMEM_PAGE_SZ    ),
+        .OSZ_WINDOW       (OSZ_WINDOW      ),
         .ADDRESS          (ADDRESS         )
     )
     ni (
@@ -238,6 +241,7 @@ module DMNI
         .cfg_data_i                       (cfg_data_i                    ),
         .cfg_data_o                       (cfg_data_o                    ),
         .release_peripheral_o             (release_peripheral_o          ),
+        .osz_block_o                      (osz_block_o                   ),
         .hermes_send_active_i             (hermes_send_active            ),
         .hermes_receive_active_i          (hermes_receive_active         ),
         .hermes_receive_available_i       (hermes_receive_available      ),
